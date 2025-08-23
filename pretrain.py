@@ -12,7 +12,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 
 import tqdm
-import wandb
+import json
 import coolname
 import hydra
 import pydantic
@@ -21,6 +21,21 @@ from omegaconf import DictConfig
 from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig, PuzzleDatasetMetadata
 from utils.functions import load_model_class, get_model_source_path
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
+
+
+class LocalLogger:
+    def __init__(self, log_path: Optional[str] = None):
+        self.log_path = log_path
+        self.log_data = []
+
+    def log(self, data: dict, step: int):
+        if self.log_path:
+            self.log_data.append({"step": step, **data})
+            with open(self.log_path, "w") as f:
+                json.dump(self.log_data, f, indent=4)
+
+    def finish(self):
+        pass
 
 
 class LossConfig(pydantic.BaseModel):
@@ -68,6 +83,8 @@ class PretrainConfig(pydantic.BaseModel):
     checkpoint_every_eval: bool = False
     eval_interval: Optional[int] = None
     eval_save_outputs: List[str] = []
+    smoke_test: bool = False
+    log_path: Optional[str] = None
 
 
 @dataclass
@@ -121,11 +138,11 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
     model_cls = load_model_class(config.arch.name)
     loss_head_cls = load_model_class(config.arch.loss.name)
 
-    device = os.environ.get("DEVICE", "cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with torch.device(device):
         model: nn.Module = model_cls(model_cfg)
         model = loss_head_cls(model, **config.arch.loss.__pydantic_extra__)  # type: ignore
-        if "DISABLE_COMPILE" not in os.environ and device == "cuda":
+        if "DISABLE_COMPILE" not in os.environ and device.type == "cuda":
             model = torch.compile(model, dynamic=False)  # type: ignore
 
         # Broadcast parameters from rank 0
@@ -213,7 +230,7 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
         return
 
     # To device
-    device = os.environ.get("DEVICE", "cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     batch = {k: v.to(device) for k, v in batch.items()}
 
     # Init carry if it is None
@@ -276,7 +293,7 @@ def evaluate(config: PretrainConfig, train_state: TrainState, eval_loader: torch
         metric_global_batch_size = [0 for _ in range(len(set_ids))]
         
         carry = None
-        device = os.environ.get("DEVICE", "cuda")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         for set_name, batch, global_batch_size in eval_loader:
             # To device
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -333,8 +350,8 @@ def evaluate(config: PretrainConfig, train_state: TrainState, eval_loader: torch
                 return reduced_metrics
 
 
-def save_code_and_config(config: PretrainConfig):
-    if config.checkpoint_path is None or wandb.run is None:
+def save_code_and_config(config: PretrainConfig, logger: LocalLogger):
+    if config.checkpoint_path is None:
         return
 
     os.makedirs(config.checkpoint_path, exist_ok=True)
@@ -355,8 +372,6 @@ def save_code_and_config(config: PretrainConfig):
     with open(config_file, "wt") as f:
         yaml.dump(config.model_dump(), f)
 
-    # Log code
-    wandb.run.log_code(config.checkpoint_path)
 
 
 def load_synced_config(hydra_config: DictConfig, rank: int, world_size: int) -> PretrainConfig:
@@ -413,14 +428,17 @@ def launch(hydra_config: DictConfig):
     # Train state
     train_state = init_train_state(config, train_metadata, world_size=WORLD_SIZE)
 
+    if config.smoke_test:
+        train_state.total_steps = 1
+
     # Progress bar and logger
     progress_bar = None
+    logger = None
     if RANK == 0:
         progress_bar = tqdm.tqdm(total=train_state.total_steps)
-
-        wandb.init(project=config.project_name, name=config.run_name, config=config.model_dump(), settings=wandb.Settings(_disable_stats=True))  # type: ignore
-        wandb.log({"num_params": sum(x.numel() for x in train_state.model.parameters())}, step=0)
-        save_code_and_config(config)
+        logger = LocalLogger(log_path=config.log_path)
+        logger.log({"num_params": sum(x.numel() for x in train_state.model.parameters())}, step=0)
+        save_code_and_config(config, logger)
 
     # Training Loop
     for _iter_id in range(total_iters):
@@ -431,16 +449,22 @@ def launch(hydra_config: DictConfig):
         for set_name, batch, global_batch_size in train_loader:
             metrics = train_batch(config, train_state, batch, global_batch_size, rank=RANK, world_size=WORLD_SIZE)
 
-            if RANK == 0 and metrics is not None:
-                wandb.log(metrics, step=train_state.step)
+            if RANK == 0 and metrics is not None and logger is not None:
+                logger.log(metrics, step=train_state.step)
                 progress_bar.update(train_state.step - progress_bar.n)  # type: ignore
+
+            if train_state.step >= train_state.total_steps:
+                break
+
+        if train_state.step >= train_state.total_steps:
+            break
 
         ############ Evaluation
         train_state.model.eval()
         metrics = evaluate(config, train_state, eval_loader, eval_metadata, rank=RANK, world_size=WORLD_SIZE)
 
-        if RANK == 0 and metrics is not None:
-            wandb.log(metrics, step=train_state.step)
+        if RANK == 0 and metrics is not None and logger is not None:
+            logger.log(metrics, step=train_state.step)
             
         ############ Checkpointing
         if RANK == 0 and (config.checkpoint_every_eval or (_iter_id == total_iters - 1)):
@@ -449,7 +473,8 @@ def launch(hydra_config: DictConfig):
     # finalize
     if dist.is_initialized():
         dist.destroy_process_group()
-    wandb.finish()
+    if logger:
+        logger.finish()
 
 
 if __name__ == "__main__":

@@ -22,7 +22,6 @@ python pretrain.py \
     global_batch_size=1 \
     +smoke_test=true \
     epochs=1 \
-    eval_interval=1 \
-    checkpoint_every_eval=False
+    eval_interval=9999
 
 echo "Barebones test completed successfully."

@@ -8,6 +8,7 @@ import shutil
 import torch
 import torch.distributed as dist
 from torch import nn
+from torch.optim import Adam
 from torch.utils.data import DataLoader
 
 import tqdm
@@ -120,10 +121,11 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
     model_cls = load_model_class(config.arch.name)
     loss_head_cls = load_model_class(config.arch.loss.name)
 
-    with torch.device("cuda"):
+    device = os.environ.get("DEVICE", "cuda")
+    with torch.device(device):
         model: nn.Module = model_cls(model_cfg)
         model = loss_head_cls(model, **config.arch.loss.__pydantic_extra__)  # type: ignore
-        if "DISABLE_COMPILE" not in os.environ:
+        if "DISABLE_COMPILE" not in os.environ and device == "cuda":
             model = torch.compile(model, dynamic=False)  # type: ignore
 
         # Broadcast parameters from rank 0
@@ -211,11 +213,12 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
         return
 
     # To device
-    batch = {k: v.cuda() for k, v in batch.items()}
+    device = os.environ.get("DEVICE", "cuda")
+    batch = {k: v.to(device) for k, v in batch.items()}
 
     # Init carry if it is None
     if train_state.carry is None:
-        with torch.device("cuda"):
+        with torch.device(device):
             train_state.carry = train_state.model.initial_carry(batch)  # type: ignore
 
     # Forward
@@ -273,10 +276,11 @@ def evaluate(config: PretrainConfig, train_state: TrainState, eval_loader: torch
         metric_global_batch_size = [0 for _ in range(len(set_ids))]
         
         carry = None
+        device = os.environ.get("DEVICE", "cuda")
         for set_name, batch, global_batch_size in eval_loader:
             # To device
-            batch = {k: v.cuda() for k, v in batch.items()}
-            with torch.device("cuda"):
+            batch = {k: v.to(device) for k, v in batch.items()}
+            with torch.device(device):
                 carry = train_state.model.initial_carry(batch)  # type: ignore
 
             # Forward

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Dict, Tuple
 
-from .hrm import HierarchicalReasoningModel_ACTV1, HierarchicalReasoningModel_ACTV1Carry
+from .hrm_act_v1 import HierarchicalReasoningModel_ACTV1, HierarchicalReasoningModel_ACTV1Carry
 from .external_memory import ExternalMemory
 
 

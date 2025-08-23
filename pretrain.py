@@ -13,7 +13,6 @@ from torch.utils.data import DataLoader
 
 import tqdm
 import json
-import coolname
 import hydra
 import pydantic
 from omegaconf import DictConfig
@@ -74,8 +73,6 @@ class PretrainConfig(pydantic.BaseModel):
     puzzle_emb_weight_decay: float
 
     # Names
-    project_name: Optional[str] = None
-    run_name: Optional[str] = None
     checkpoint_path: Optional[str] = None
 
     # Extras
@@ -298,7 +295,7 @@ def evaluate(config: PretrainConfig, train_state: TrainState, eval_loader: torch
             # To device
             batch = {k: v.to(device) for k, v in batch.items()}
             with torch.device(device):
-                carry = train_state.model.initial_carry(batch)  # type: ignore
+                carry = train_state.model.initial_carry(batch)
 
             # Forward
             while True:
@@ -320,7 +317,7 @@ def evaluate(config: PretrainConfig, train_state: TrainState, eval_loader: torch
             
             if metric_values is None:
                 metric_keys = list(sorted(metrics.keys()))  # Sort keys to guarantee all processes use the same order.
-                metric_values = torch.zeros((len(set_ids), len(metrics.values())), dtype=torch.float32, device="cuda")
+                metric_values = torch.zeros((len(set_ids), len(metrics.values())), dtype=torch.float32, device=device)
                 
             metric_values[set_id] += torch.stack([metrics[k] for k in metric_keys])
             metric_global_batch_size[set_id] += global_batch_size
@@ -377,38 +374,38 @@ def save_code_and_config(config: PretrainConfig, logger: LocalLogger):
 def load_synced_config(hydra_config: DictConfig, rank: int, world_size: int) -> PretrainConfig:
     objects = [None]
     if rank == 0:
-        config = PretrainConfig(**hydra_config)  # type: ignore
+        config = PretrainConfig(**hydra_config)
 
         # Naming
-        if config.project_name is None:
-            config.project_name = f"{os.path.basename(config.data_path).capitalize()} ACT-torch"
-        if config.run_name is None:
-            config.run_name = f"{config.arch.name.split('@')[-1]} {coolname.generate_slug(2)}"
         if config.checkpoint_path is None:
-            config.checkpoint_path = os.path.join("checkpoints", config.project_name, config.run_name)
+            config.checkpoint_path = os.path.join("checkpoints", f"{os.path.basename(config.data_path).capitalize()}", f"{config.arch.name.split('@')[-1]}")
 
         objects = [config]
 
     if world_size > 1:
         dist.broadcast_object_list(objects, src=0)
 
-    return objects[0]  # type: ignore
+    return objects[0]
 
 
 @hydra.main(config_path="config", config_name="cfg_pretrain", version_base=None)
 def launch(hydra_config: DictConfig):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
     RANK = 0
     WORLD_SIZE = 1
 
     # Initialize distributed training if in distributed environment (e.g. torchrun)
     if "LOCAL_RANK" in os.environ:
         # Initialize distributed, default device and dtype
-        dist.init_process_group(backend="nccl")
+        backend = "nccl" if device == "cuda" else "gloo"
+        dist.init_process_group(backend=backend)
 
         RANK = dist.get_rank()
         WORLD_SIZE = dist.get_world_size()
 
-        torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+        if device == "cuda":
+            torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
         
     # Load sync'ed config
     config = load_synced_config(hydra_config, rank=RANK, world_size=WORLD_SIZE)
@@ -452,12 +449,6 @@ def launch(hydra_config: DictConfig):
             if RANK == 0 and metrics is not None and logger is not None:
                 logger.log(metrics, step=train_state.step)
                 progress_bar.update(train_state.step - progress_bar.n)  # type: ignore
-
-            if train_state.step >= train_state.total_steps:
-                break
-
-        if train_state.step >= train_state.total_steps:
-            break
 
         ############ Evaluation
         train_state.model.eval()

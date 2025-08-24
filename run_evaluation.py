@@ -2,86 +2,115 @@ import os
 import subprocess
 import yaml
 import json
-from pathlib import Path
 import argparse
+from pathlib import Path
+
+def get_hrem_config(hrm_config_path: str, hrem_config_path: str) -> Path:
+    """Create HREM config from HRM config."""
+    with open(hrm_config_path, "r") as f:
+        hrm_config = yaml.safe_load(f)
+
+    hrem_config = hrm_config.copy()
+    hrem_config["name"] = "hrm.hrem@HREM"
+    hrem_config["use_memory"] = True
+    hrem_config["m_loc"] = 128
+    hrem_config["d_mem"] = 128
+    hrem_config["top_k"] = 4
+    hrem_config["sparse_addressing"] = True
+    hrem_config["use_location_addressing"] = True
+
+    with open(hrem_config_path, "w") as f:
+        yaml.dump(hrem_config, f)
+
+    return Path(hrem_config_path)
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--smoke-test", action="store_true")
+    parser.add_argument("--dataset", type=str, default="arc", choices=["arc", "sudoku", "maze", "synthetic"])
+    parser.add_argument("--num-aug", type=int, default=0)
+    parser.add_argument("--synthetic-task", type=str, default="copy", choices=["copy", "reverse"])
     args = parser.parse_args()
 
     smoke_test = args.smoke_test
 
-    # --- Environment Setup ---
-    print("Setting up the environment...")
-    # The script will inherit the environment, so no need to set DEVICE explicitly
-
     # --- Data Preparation ---
     print("Preparing dataset...")
-    data_dir = "data/arc-smoke" if smoke_test else "data/arc-full"
     if smoke_test:
-        print("Running in smoke test mode. Using a small dataset.")
-        subprocess.run([
-            "python", "dataset/build_arc_dataset.py",
-            f"--output-dir={data_dir}",
-            "--num-aug=0"
-        ], check=True)
+        args.dataset = "synthetic"
+        data_dir = f"data/{args.dataset}-smoke"
+        num_aug = 0
+        epochs = 1
+        eval_interval = 1
+        print("Running in smoke test mode. Using a small synthetic dataset.")
     else:
-        print("Running in full mode. Using the complete dataset.")
-        subprocess.run([
-            "python", "dataset/build_arc_dataset.py",
-            f"--output-dir={data_dir}",
-            "--num-aug=1000"
-        ], check=True)
+        data_dir = f"data/{args.dataset}-full"
+        num_aug = args.num_aug
+        epochs = 20000
+        eval_interval = 2000
+        print("Running in full mode.")
+
+    dataset_builder_script = f"dataset/build_{args.dataset}_dataset.py"
+    if not os.path.exists(dataset_builder_script):
+        raise FileNotFoundError(f"Dataset builder script not found: {dataset_builder_script}")
+
+    build_command = [
+        "python", dataset_builder_script,
+        f"--output-dir={data_dir}",
+        f"--num-aug={num_aug}"
+    ]
+    if args.dataset == "synthetic":
+        build_command.append(f"--task-type={args.synthetic_task}")
+        build_command.append("--num-samples=10") # smaller dataset for smoke test
+
+    subprocess.run(build_command, check=True)
 
     # --- Training and Evaluation ---
     print("Starting training and evaluation...")
 
-    epochs = 1 if smoke_test else 20000
-    eval_interval = 1 if smoke_test else 2000
+    hrem_config_path = Path("config/arch/hrem_v1_temp.yaml")
+    try:
+        get_hrem_config("config/arch/hrm_v1.yaml", str(hrem_config_path))
 
-    # Create HREM config from HRM config
-    hrem_config_path = "config/arch/hrem_v1.yaml"
-    if not os.path.exists(hrem_config_path):
-        with open("config/arch/hrm_v1.yaml", "r") as f:
-            hrm_config = yaml.safe_load(f)
+        models_to_run = {
+            "HRM": "hrm_v1",
+            "HREM": "hrem_v1_temp",
+        }
 
-        hrem_config = hrm_config.copy()
-        hrem_config["name"] = "hrm.hrem@HREM"
-        hrem_config["use_memory"] = True
-        hrem_config["m_loc"] = 128
-        hrem_config["d_mem"] = 128
-        hrem_config["top_k"] = 4
-        hrem_config["sparse_addressing"] = True
-        hrem_config["use_location_addressing"] = True
+        for model_name, config_name in models_to_run.items():
+            print(f"--- Running experiment for {model_name} ---")
+            log_path = f"results_{model_name}.json"
 
-        with open(hrem_config_path, "w") as f:
-            yaml.dump(hrem_config, f)
+            command = [
+                "torchrun", "--nproc-per-node", "1", "pretrain.py",
+                f"data_path={data_dir}",
+                f"epochs={epochs}",
+                f"eval_interval={eval_interval}",
+                f"arch={config_name}",
+                f"+log_path={log_path}",
+                "+project_name=HREM_vs_HRM",
+                f"+run_name={model_name}_{args.dataset}_smoke_{smoke_test}"
+            ]
+            if smoke_test:
+                command.append("+smoke_test=True")
+                command.append("arch.hidden_size=16")
+                command.append("arch.H_layers=1")
+                command.append("arch.L_layers=1")
+                command.append("arch.puzzle_emb_ndim=16")
+                command.append("arch.num_heads=1")
+                command.append("arch.expansion=1.0")
+                command.append("global_batch_size=1")
+                command.append("checkpoint_every_eval=True")
 
-    models_to_run = {
-        "HRM": "hrm_v1",
-        "HREM": "hrem_v1",
-    }
 
-    for model_name, config_name in models_to_run.items():
-        print(f"--- Running experiment for {model_name} ---")
-        log_path = f"results_{model_name}.json"
+            subprocess.run(command, check=True)
+            print(f"--- Finished experiment for {model_name} ---")
 
-        command = [
-            "python", "pretrain.py",
-            f"data_path={data_dir}",
-            f"epochs={epochs}",
-            f"eval_interval={eval_interval}",
-            f"arch={config_name}",
-            f"log_path={log_path}",
-            "+project_name=HREM_vs_HRM",
-            f"+run_name={model_name}_smoke_test_{smoke_test}"
-        ]
-        if smoke_test:
-            command.append("smoke_test=True")
+    finally:
+        if hrem_config_path.exists():
+            hrem_config_path.unlink()
 
-        subprocess.run(command, check=True)
-        print(f"--- Finished experiment for {model_name} ---")
 
     # --- Reporting ---
     print("--- Comparison Report ---")
@@ -90,8 +119,16 @@ def main():
 
     for model_name in models_to_run.keys():
         log_path = f"results_{model_name}.json"
+        if not os.path.exists(log_path):
+            print(f"Log file not found for {model_name}, skipping report generation.")
+            continue
+
         with open(log_path, "r") as f:
             data = json.load(f)
+
+        if not data:
+            print(f"No data found in log file for {model_name}, skipping report generation.")
+            continue
 
         report.append(f"## Results for {model_name}")
 

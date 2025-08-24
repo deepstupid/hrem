@@ -55,7 +55,9 @@ class ACTLossHead(nn.Module):
         # Model logits
         # B x SeqLen x D
         new_carry, outputs = self.model(**model_kwargs)
-        labels = new_carry.current_data["labels"]
+
+        hrm_carry = new_carry[0] if isinstance(new_carry, tuple) else new_carry
+        labels = hrm_carry.current_data["labels"]
 
         # Correctness
         with torch.no_grad():
@@ -67,7 +69,7 @@ class ACTLossHead(nn.Module):
             seq_is_correct = is_correct.sum(-1) == loss_counts
             
             # Metrics (halted)
-            valid_metrics = new_carry.halted & (loss_counts > 0)
+            valid_metrics = hrm_carry.halted & (loss_counts > 0)
             metrics = {
                 "count": valid_metrics.sum(),
                 
@@ -75,7 +77,7 @@ class ACTLossHead(nn.Module):
                 "exact_accuracy": (valid_metrics & seq_is_correct).sum(),
 
                 "q_halt_accuracy": (valid_metrics & ((outputs["q_halt_logits"] >= 0) == seq_is_correct)).sum(),
-                "steps":          torch.where(valid_metrics, new_carry.steps, 0).sum(),
+                "steps":          torch.where(valid_metrics, hrm_carry.steps, 0).sum(),
             }
 
         # Losses
@@ -98,4 +100,4 @@ class ACTLossHead(nn.Module):
         # Filter outputs for return
         detached_outputs = {k: outputs[k].detach() for k in return_keys if k in outputs}
 
-        return new_carry, lm_loss + 0.5 * (q_halt_loss + q_continue_loss), metrics, detached_outputs, new_carry.halted.all()
+        return new_carry, lm_loss + 0.5 * (q_halt_loss + q_continue_loss), metrics, detached_outputs, hrm_carry.halted.all()

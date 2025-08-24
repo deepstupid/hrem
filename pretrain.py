@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 import tqdm
 import json
 import hydra
+import numpy as np
 import pydantic
 from omegaconf import DictConfig
 
@@ -21,6 +22,14 @@ from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig, PuzzleDatasetMeta
 from utils.functions import load_model_class, get_model_source_path
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
 
+
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (np.integer, np.floating)):
+            return obj.item()
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NumpyEncoder, self).default(obj)
 
 class LocalLogger:
     def __init__(self, log_path: Optional[str] = None):
@@ -31,7 +40,7 @@ class LocalLogger:
         if self.log_path:
             self.log_data.append({"step": step, **data})
             with open(self.log_path, "w") as f:
-                json.dump(self.log_data, f, indent=4)
+                json.dump(self.log_data, f, indent=4, cls=NumpyEncoder)
                 f.flush()
 
     def finish(self):
@@ -237,7 +246,8 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
             train_state.carry = train_state.model.initial_carry(batch)  # type: ignore
 
     # Forward
-    train_state.carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+    new_carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+    train_state.carry = new_carry
 
     ((1 / global_batch_size) * loss).backward()
 

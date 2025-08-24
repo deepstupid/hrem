@@ -25,7 +25,17 @@ def get_hrem_config(hrm_config_path: str, hrem_config_path: str, params: dict) -
 
     return Path(hrem_config_path)
 
-def run_model(args, console, model_name, config_name, hparams=None, trial_num=None):
+def _run_command(command: list[str], console: Console, error_message: str):
+    """Executes a command and handles potential errors."""
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]{error_message}[/bold red]")
+        console.print(e.stdout)
+        console.print(e.stderr)
+        raise
+
+def run_model(args, console, model_name, config_name, hparams=None, trial_num=None, live_active=False):
     smoke_test = args.smoke_test
     if smoke_test:
         data_dir = f"data/{args.dataset}-smoke"
@@ -40,22 +50,24 @@ def run_model(args, console, model_name, config_name, hparams=None, trial_num=No
 
     dataset_builder_script = f"dataset/build_{args.dataset}_dataset.py"
     if not os.path.exists(data_dir):
-        with console.status(f"[bold green]Building {args.dataset} dataset..."):
-            build_command = [
-                sys.executable, dataset_builder_script,
-                f"--output-dir={data_dir}",
-                f"--num-aug={num_aug}"
-            ]
-            if args.dataset == "synthetic":
-                build_command.append(f"--task-type={args.synthetic_task}")
-                build_command.append("--num-samples=10")
-            try:
-                subprocess.run(build_command, check=True, capture_output=True, text=True)
-            except subprocess.CalledProcessError as e:
-                console.print("[bold red]Error running dataset builder:[/bold red]")
-                console.print(e.stdout)
-                console.print(e.stderr)
-                raise
+        build_command = [
+            sys.executable, dataset_builder_script,
+            f"--output-dir={data_dir}",
+            f"--num-aug={num_aug}"
+        ]
+        if args.dataset == "synthetic":
+            build_command.append(f"--task-type={args.synthetic_task}")
+            build_command.append("--num-samples=10")
+
+        build_msg = f"[bold green]Building {args.dataset} dataset..."
+        error_msg = "Error running dataset builder:"
+
+        if live_active:
+            console.print(build_msg)
+            _run_command(build_command, console, error_msg)
+        else:
+            with console.status(build_msg):
+                _run_command(build_command, console, error_msg)
 
     config_path = Path(f"config/arch/{config_name}.yaml")
     if hparams:
@@ -85,14 +97,15 @@ def run_model(args, console, model_name, config_name, hparams=None, trial_num=No
             "arch.expansion=1.0", "global_batch_size=1", "checkpoint_every_eval=True"
         ])
 
-    with console.status(f"[bold green]Running {model_name}..."):
-        try:
-            subprocess.run(command, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            console.print(f"[bold red]Error running pretrain.py for {model_name}:[/bold red]")
-            console.print(e.stdout)
-            console.print(e.stderr)
-            raise
+    run_msg = f"[bold green]Running {model_name}..."
+    error_msg = f"Error running pretrain.py for {model_name}:"
+
+    if live_active:
+        console.print(run_msg)
+        _run_command(command, console, error_msg)
+    else:
+        with console.status(run_msg):
+            _run_command(command, console, error_msg)
 
     with open(log_path, "r") as f:
         data = json.load(f)
@@ -106,7 +119,7 @@ def run_model(args, console, model_name, config_name, hparams=None, trial_num=No
 
     return final_metrics
 
-def objective(trial: optuna.trial.Trial, args, console):
+def objective(trial: optuna.trial.Trial, args, console, live_active: bool = False):
     params = {
         "m_loc": trial.suggest_int("m_loc", 64, 256),
         "d_mem": trial.suggest_int("d_mem", 64, 256),
@@ -118,7 +131,7 @@ def objective(trial: optuna.trial.Trial, args, console):
         "hidden_size": trial.suggest_categorical("hidden_size", [128, 256, 512]),
     }
 
-    metrics = run_model(args, console, "HREM", "hrem_v1_temp", hparams=params, trial_num=trial.number)
+    metrics = run_model(args, console, "HREM", "hrem_v1_temp", hparams=params, trial_num=trial.number, live_active=live_active)
     return metrics.get('test/all/total_loss', float('inf'))
 
 class RichCallback:
@@ -156,7 +169,7 @@ def main():
     with Live(table, console=console, screen=True, redirect_stderr=False) as live:
         study = optuna.create_study(direction="minimize")
         callback = RichCallback(table, live)
-        study.optimize(lambda trial: objective(trial, args, console), n_trials=args.n_trials, callbacks=[callback])
+        study.optimize(lambda trial: objective(trial, args, console, live_active=True), n_trials=args.n_trials, callbacks=[callback])
 
         console.print("\n[bold green]Optimization finished.[/bold green]")
         console.print(f"[bold]Best trial: {study.best_trial.number}[/bold]")

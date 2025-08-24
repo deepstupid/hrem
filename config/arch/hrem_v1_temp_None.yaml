@@ -1,19 +1,19 @@
 H_cycles: 3
-H_layers: 3
-L_cycles: 4
-L_layers: 3
-d_mem: 180
+H_layers: 2
+L_cycles: 11
+L_layers: 2
+d_mem: 253
 expansion: 4
 halt_exploration_prob: 0.1
 halt_max_steps: 16
-hidden_size: 512
+hidden_size: 128
 loss:
   loss_type: stablemax_cross_entropy
   name: losses@ACTLossHead
-m_loc: 139
+m_loc: 103
 name: hrm.hrem@HREM
 num_heads: 8
 pos_encodings: rope
 puzzle_emb_ndim: ${.hidden_size}
-top_k: 6
+top_k: 3
 use_memory: true

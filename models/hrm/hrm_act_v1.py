@@ -56,6 +56,14 @@ class HierarchicalReasoningModel_ACTV1Config(BaseModel):
 
     forward_dtype: str = "bfloat16"
 
+    # HREM
+    use_memory: bool = False
+    m_loc: int = 128
+    d_mem: int = 128
+    top_k: int = 4
+    sparse_addressing: bool = True
+    use_location_addressing: bool = True
+
 
 class HierarchicalReasoningModel_ACTV1Block(nn.Module):
     def __init__(self, config: HierarchicalReasoningModel_ACTV1Config) -> None:

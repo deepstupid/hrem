@@ -32,6 +32,7 @@ class LocalLogger:
             self.log_data.append({"step": step, **data})
             with open(self.log_path, "w") as f:
                 json.dump(self.log_data, f, indent=4)
+                f.flush()
 
     def finish(self):
         pass

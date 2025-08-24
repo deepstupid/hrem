@@ -1,0 +1,24 @@
+name: hrm.hrem@HREM
+use_memory: true
+hidden_size: 16
+expansion: 1.0
+num_heads: 1
+pos_encodings: "rope"
+puzzle_emb_ndim: 16
+H_layers: 1
+L_layers: 1
+H_cycles: 1
+L_cycles: 12
+halt_max_steps: 12
+halt_exploration_prob: 0.0
+forward_dtype: "float32"
+m_loc: 128
+d_mem: 128
+top_k: 4
+sparse_addressing: true
+use_location_addressing: true
+
+loss:
+  name: losses@ACTLossHead
+  loss_type: stablemax_cross_entropy
+  q_learning_gamma: 0.9

@@ -8,7 +8,7 @@
         "train/accuracy": 0.0,
         "train/count": 0.0,
         "train/exact_accuracy": 0.0,
-        "train/lm_loss": 2.528347724280631,
+        "train/lm_loss": 2.5107215945108248,
         "train/q_continue_loss": 0.04017925262451172,
         "train/q_halt_accuracy": 0.0,
         "train/q_halt_loss": 0.006715297698974609,

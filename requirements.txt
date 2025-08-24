@@ -10,3 +10,7 @@ huggingface_hub
 numpy
 ninja
 packaging
+pandas
+optuna
+rich
+optuna-dashboard

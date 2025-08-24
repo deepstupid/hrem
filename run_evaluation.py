@@ -1,29 +1,8 @@
 import os
 import subprocess
-import yaml
 import json
 import argparse
-from pathlib import Path
-
-def get_hrem_config(hrm_config_path: str, hrem_config_path: str) -> Path:
-    """Create HREM config from HRM config."""
-    with open(hrm_config_path, "r") as f:
-        hrm_config = yaml.safe_load(f)
-
-    hrem_config = hrm_config.copy()
-    hrem_config["name"] = "hrm.hrem@HREM"
-    hrem_config["use_memory"] = True
-    hrem_config["m_loc"] = 128
-    hrem_config["d_mem"] = 128
-    hrem_config["top_k"] = 4
-    hrem_config["sparse_addressing"] = True
-    hrem_config["use_location_addressing"] = True
-
-    with open(hrem_config_path, "w") as f:
-        yaml.dump(hrem_config, f)
-
-    return Path(hrem_config_path)
-
+import sys
 
 def main():
     parser = argparse.ArgumentParser()
@@ -56,60 +35,89 @@ def main():
         raise FileNotFoundError(f"Dataset builder script not found: {dataset_builder_script}")
 
     build_command = [
-        "python", dataset_builder_script,
+        sys.executable, dataset_builder_script,
         f"--output-dir={data_dir}",
         f"--num-aug={num_aug}"
     ]
     if args.dataset == "synthetic":
         build_command.append(f"--task-type={args.synthetic_task}")
-        build_command.append("--num-samples=10") # smaller dataset for smoke test
+        build_command.append("--num-samples=10")
 
     subprocess.run(build_command, check=True)
 
     # --- Training and Evaluation ---
     print("Starting training and evaluation...")
 
-    hrem_config_path = Path("config/arch/hrem_v1_temp.yaml")
-    try:
-        get_hrem_config("config/arch/hrm_v1.yaml", str(hrem_config_path))
+    models_to_run = {
+        "HRM": {"config": "hrm_v1"},
+        "HREM": {
+            "config": "hrm_v1",
+            "hparams": {
+                "name": "hrm.hrem@HREM",
+                "use_memory": True,
+                "m_loc": 128,
+                "d_mem": 128,
+                "top_k": 4,
+                "sparse_addressing": True,
+                "use_location_addressing": True,
+            },
+        },
+    }
 
-        models_to_run = {
-            "HRM": "hrm_v1",
-            "HREM": "hrem_v1_temp",
-        }
+    for model_name, model_info in models_to_run.items():
+        print(f"--- Running experiment for {model_name} ---")
+        log_path = f"results_{model_name}.json"
 
-        for model_name, config_name in models_to_run.items():
-            print(f"--- Running experiment for {model_name} ---")
-            log_path = f"results_{model_name}.json"
+        command = [
+            sys.executable, "-m", "torch.distributed.run",
+            "--nproc-per-node", "1",
+            "--rdzv-backend", "c10d",
+            "--rdzv-endpoint", "localhost:0",
+            "pretrain.py",
+            f"data_path={data_dir}",
+            f"epochs={epochs}",
+            f"eval_interval={eval_interval}",
+            f"arch={model_info['config']}",
+            f"+log_path={log_path}",
+            "+project_name=HREM_vs_HRM",
+            f"+run_name={model_name}_{args.dataset}_smoke_{smoke_test}"
+        ]
 
-            command = [
-                "torchrun", "--nproc-per-node", "1", "pretrain.py",
-                f"data_path={data_dir}",
-                f"epochs={epochs}",
-                f"eval_interval={eval_interval}",
-                f"arch={config_name}",
-                f"+log_path={log_path}",
-                "+project_name=HREM_vs_HRM",
-                f"+run_name={model_name}_{args.dataset}_smoke_{smoke_test}"
-            ]
-            if smoke_test:
-                command.append("+smoke_test=True")
-                command.append("arch.hidden_size=16")
-                command.append("arch.H_layers=1")
-                command.append("arch.L_layers=1")
-                command.append("arch.puzzle_emb_ndim=16")
-                command.append("arch.num_heads=1")
-                command.append("arch.expansion=1.0")
-                command.append("global_batch_size=1")
-                command.append("checkpoint_every_eval=True")
+        if "hparams" in model_info:
+            hparams = model_info["hparams"]
 
+            command.append("arch.name=hrm.hrem@HREM")
+            command.append("+arch.use_memory=True")
 
-            subprocess.run(command, check=True)
-            print(f"--- Finished experiment for {model_name} ---")
+            new_hrem_params = ["m_loc", "d_mem", "top_k", "sparse_addressing", "use_location_addressing"]
+            for key, value in hparams.items():
+                if key in ["name", "use_memory"]:
+                    continue
+                if key in new_hrem_params:
+                    command.append(f"+arch.{key}={value}")
+                else:
+                    command.append(f"arch.{key}={value}")
 
-    finally:
-        if hrem_config_path.exists():
-            hrem_config_path.unlink()
+        if smoke_test:
+            smoke_params = {
+                "hidden_size": 16,
+                "H_layers": 1,
+                "L_layers": 1,
+                "puzzle_emb_ndim": 16,
+                "num_heads": 1,
+                "expansion": 1.0,
+            }
+            for key, value in smoke_params.items():
+                command.append(f"arch.{key}={value}")
+
+            command.extend([
+                "+smoke_test=True",
+                "global_batch_size=1",
+                "checkpoint_every_eval=True"
+            ])
+
+        subprocess.run(command, check=True)
+        print(f"--- Finished experiment for {model_name} ---")
 
 
     # --- Reporting ---

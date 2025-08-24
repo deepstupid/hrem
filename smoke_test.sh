@@ -10,14 +10,14 @@ pip install -r requirements.txt
 
 # --- Dataset Preparation ---
 echo "Preparing dataset..."
-timeout 1m python dataset/build_sudoku_dataset.py --output-dir data/sudoku-extreme-1k-aug-1000  --subsample-size 1 --num-aug 1
-DATA_PATH="data/sudoku-extreme-1k-aug-1000"
+python dataset/build_synthetic_dataset.py --output-dir data/synthetic-smoke --num-samples 1 --task-type copy
+DATA_PATH="data/synthetic-smoke"
 
 # --- HRM Training ---
 echo "Training HRM..."
 HRM_CHECKPOINT_PATH="checkpoints/smoke_test/HRM"
 HRM_LOG_PATH="smoke_test_hrm_metrics.json"
-timeout 1m python pretrain.py \
+python pretrain.py \
     data_path=$DATA_PATH \
     arch=hrm_v1 \
     +arch.forward_dtype=float32 \

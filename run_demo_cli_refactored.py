@@ -218,13 +218,14 @@ class ResultsDisplay:
         """Display a clear side-by-side comparison of baseline vs optimized results for all models."""
         console.print(Panel(f"[bold]{title}[/bold]", expand=False))
         
-        # Get all model names from both baseline and optimized results
-        all_models = set()
-        all_models.update(baseline_results.keys())
-        all_models.update(optimized_results.keys())
-        all_models = sorted(list(all_models))
+        # Get baseline model names (those not ending with '_best')
+        baseline_models = [name for name in baseline_results.keys() if not name.endswith('_best')]
+        # Get optimized model names (those ending with '_best')
+        optimized_models = [name for name in optimized_results.keys() if name.endswith('_best')]
+        # Get base names of optimized models (without '_best' suffix)
+        base_names = [name.replace('_best', '') for name in optimized_models]
         
-        if not all_models:
+        if not baseline_models and not base_names:
             console.print("[dim]No models to compare[/dim]")
             return
         
@@ -232,15 +233,16 @@ class ResultsDisplay:
         table = Table(show_header=True, header_style="bold magenta", box=box.ROUNDED)
         table.add_column("Metric", style="cyan")
         
-        # Add columns for each model (baseline and optimized)
-        model_styles = {"HRM": "blue", "HREM": "green", "HREM_best": "bright_green", "HRM_best": "blue"}
-        for model_name in all_models:
+        # Add columns for baseline models
+        model_styles = {"HRM": "blue", "HREM": "green", "EnhancedHREM": "yellow", "HREM_best": "bright_green", "HRM_best": "blue"}
+        for model_name in sorted(baseline_models):
             base_style = model_styles.get(model_name, "white")
             table.add_column(f"{model_name} Baseline", justify="right", style=f"bold {base_style}")
-            # Check if there's an optimized version
-            optimized_name = f"{model_name}_best"
-            if optimized_name in optimized_results:
-                table.add_column(f"{model_name} Optimized", justify="right", style=base_style)
+        
+        # Add columns for optimized models
+        for model_name in sorted(base_names):
+            base_style = model_styles.get(model_name, "white")
+            table.add_column(f"{model_name} Optimized", justify="right", style=base_style)
         
         # Key metrics for comparison
         metrics_info = [
@@ -252,16 +254,19 @@ class ResultsDisplay:
         
         for key, display_name in metrics_info:
             row_values = []
-            for model_name in all_models:
-                # Get baseline value
+            # Add baseline values
+            for model_name in sorted(baseline_models):
                 baseline_val = baseline_results.get(model_name, {}).get(key, 'N/A')
                 row_values.append(ResultsDisplay._format_value(baseline_val, key))
                 
-                # Get optimized value if it exists
-                optimized_name = f"{model_name}_best"
+            # Add optimized values
+            for base_name in sorted(base_names):
+                optimized_name = f"{base_name}_best"
                 if optimized_name in optimized_results:
                     optimized_val = optimized_results.get(optimized_name, {}).get(key, 'N/A')
                     row_values.append(ResultsDisplay._format_value(optimized_val, key))
+                else:
+                    row_values.append('N/A')
             
             table.add_row(display_name, *row_values)
         

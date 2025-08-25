@@ -7,6 +7,7 @@ from .screens.visualizer import DatasetVisualizer
 from .screens.testing import TestingScreen
 from .screens.dataset_management import DatasetManagementScreen
 from .screens.demo import DemoScreen
+from .screens.progress import ProgressScreen
 
 class HRMApp(App):
     """A Textual app to run HRM System experiments."""
@@ -32,6 +33,12 @@ class HRMApp(App):
             with TabPane("Dataset Visualizer", id="visualizer"):
                 yield DatasetVisualizer()
         yield Footer()
+
+    def show_progress_screen(self):
+        self.push_screen(ProgressScreen())
+
+    def show_main_screen(self):
+        self.pop_screen()
 
 if __name__ == "__main__":
     app = HRMApp()

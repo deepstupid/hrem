@@ -421,11 +421,12 @@ class ExperimentRunner:
         
         config_settings = self.config.config_settings
         
-        # If no specific models provided, use default HRM and HREM
+        # If no specific models provided, use default HRM, HREM, and EnhancedHREM
         if model_configs is None:
             model_configs = [
                 ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"),
-                ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1")
+                ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1"),
+                ModelConfig(name="EnhancedHREM", algorithm_class="hrm_system.algorithms.enhanced_hrem.EnhancedHREMAlgorithm", base_arch_config="enhanced_hrem_v1")
             ]
         
         # Create evaluation config with all models
@@ -433,15 +434,13 @@ class ExperimentRunner:
             "n_runs": 1
         }
         
-        # Add models to evaluation config (up to 3 models supported directly)
+        # Add models to evaluation config (up to 5 models supported directly)
+        model_keys = ["model_a", "model_b", "model_c", "model_d", "model_e"]
         for i, model_config in enumerate(model_configs):
-            if i == 0:
-                eval_config_dict["model_a"] = model_config
-            elif i == 1:
-                eval_config_dict["model_b"] = model_config
-            elif i == 2:
-                eval_config_dict["model_c"] = model_config
-                break  # Only support up to 3 models directly
+            if i < len(model_keys):
+                eval_config_dict[model_keys[i]] = model_config
+            else:
+                break  # Only support up to 5 models directly
         
         config = ExperimentConfig(
             mode="evaluate",
@@ -484,22 +483,47 @@ class ExperimentRunner:
             
         return results.get("results", {})
     
-    def run_hyperparameter_optimization(self, study_name: str, data_config: DataConfig) -> Tuple[HREMParams, Dict[str, Any]]:
-        """Run hyperparameter optimization for both HRM and HREM with competitive parameter counts."""
-        ResultsDisplay.display_iteration_header("🔍 Step 2: Guided Hyperparameter Optimization", 
-                               f"Optimizing both HRM and HREM hyperparameters on {data_config.dataset} dataset with real-time performance feedback...")
-        console.print("[dim]💡 Key advantage: Results are generated after each iteration![/dim]")
-        console.print()
-        
+    def run_hyperparameter_optimization_for_model(self, model_config: ModelConfig, study_name: str, data_config: DataConfig) -> Dict[str, Any]:
+        """Run hyperparameter optimization for a single model."""
         config_settings = self.config.config_settings
         
-        # First, optimize HREM
-        console.print("[bold blue]Running HREM hyperparameter optimization...[/bold blue]")
-        hrem_config = ExperimentConfig(
+        # Create optimization config based on model type
+        if "hrem" in model_config.algorithm_class.lower():
+            # HREM optimization config
+            opt_config = OptimizationConfig(
+                n_trials=config_settings["opt_trials"],
+                n_jobs=1,
+                storage="sqlite:///experiments/optuna_demo_cli.db",
+                n_final_runs=1,
+                model_to_optimize=ModelConfig(
+                    name=f"{model_config.name}_best",
+                    algorithm_class=model_config.algorithm_class,
+                    base_arch_config=model_config.base_arch_config
+                )
+            )
+        else:
+            # HRM or other model optimization config
+            opt_config = OptimizationConfig(
+                n_trials=config_settings["opt_trials"],
+                n_jobs=1,
+                storage="sqlite:///experiments/optuna_demo_cli.db",
+                n_final_runs=1,
+                model_to_optimize=ModelConfig(
+                    name=f"{model_config.name}_best",
+                    algorithm_class=model_config.algorithm_class,
+                    base_arch_config=model_config.base_arch_config
+                ),
+                # Define search space for HRM parameters if needed
+                search_space={
+                    "path": "config/hrm_search_space.yaml"
+                }
+            )
+        
+        config = ExperimentConfig(
             mode="optimize",
             run_config=RunConfig(
                 smoke_test=True,
-                study_name=f"{study_name}_hrem",
+                study_name=f"{study_name}_{model_config.name.lower()}",
                 logger_callback=self.logger.log
             ),
             data_config=data_config,
@@ -507,18 +531,7 @@ class ExperimentRunner:
                 epochs=config_settings["opt_epochs"], 
                 eval_interval=config_settings["opt_eval_interval"]
             ),
-            optimization_config=OptimizationConfig(
-                n_trials=config_settings["opt_trials"],
-                n_jobs=1,
-                storage="sqlite:///experiments/optuna_demo_cli.db",
-                n_final_runs=1,
-                # Specify that we're optimizing HREM
-                model_to_optimize=ModelConfig(
-                    name="HREM_best",
-                    algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm",
-                    base_arch_config="hrem_v1"
-                )
-            )
+            optimization_config=opt_config
         )
         
         start_time = time.time()
@@ -527,9 +540,9 @@ class ExperimentRunner:
             TextColumn("[progress.description]{task.description}"),
             transient=True,
         ) as progress:
-            progress.add_task(description="Running HREM hyperparameter optimization...", total=None)
+            progress.add_task(description=f"Running {model_config.name} hyperparameter optimization...", total=None)
             try:
-                hrem_result = run_optimization(hrem_config)
+                result = run_optimization(config)
             except Exception as e:
                 # Handle dataset-related errors more gracefully
                 if "No such file or directory" in str(e) and "raw-data" in str(e):
@@ -541,121 +554,97 @@ class ExperimentRunner:
                 else:
                     # Re-raise other exceptions
                     raise e
-        
-        hrem_elapsed = time.time() - start_time
-        console.print(f"[dim]⏱️  HREM optimization completed in {hrem_elapsed:.1f} seconds[/dim]")
-        
-        # Then, optimize HRM
-        console.print("[bold blue]Running HRM hyperparameter optimization...[/bold blue]")
-        
-        # Create HRM optimization config
-        hrm_config = ExperimentConfig(
-            mode="optimize",
-            run_config=RunConfig(
-                smoke_test=True,
-                study_name=f"{study_name}_hrm",
-                logger_callback=self.logger.log
-            ),
-            data_config=data_config,
-            training_config=TrainingConfig(
-                epochs=config_settings["opt_epochs"], 
-                eval_interval=config_settings["opt_eval_interval"]
-            ),
-            optimization_config=OptimizationConfig(
-                n_trials=config_settings["opt_trials"],
-                n_jobs=1,
-                storage="sqlite:///experiments/optuna_demo_cli.db",
-                n_final_runs=1,
-                # Specify that we're optimizing HRM
-                model_to_optimize=ModelConfig(
-                    name="HRM_best",
-                    algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
-                    base_arch_config="hrm_v1"
-                ),
-                # Define search space for HRM parameters
-                search_space={
-                    "path": "config/hrm_search_space.yaml"
-                }
-            )
-        )
-        
-        hrm_start_time = time.time()
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-        ) as progress:
-            progress.add_task(description="Running HRM hyperparameter optimization...", total=None)
-            try:
-                hrm_result = run_optimization(hrm_config)
-            except Exception as e:
-                # Handle dataset-related errors more gracefully
-                if "No such file or directory" in str(e) and "raw-data" in str(e):
-                    console.print(f"[bold red]❌ Dataset not found![/bold red]")
-                    console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
-                    console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
-                    console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
-                    raise SystemExit(1)
-                else:
-                    # Re-raise other exceptions
-                    raise e
-        
-        hrm_elapsed = time.time() - hrm_start_time
-        console.print(f"[dim]⏱️  HRM optimization completed in {hrm_elapsed:.1f} seconds[/dim]")
-        
-        # Get best parameters for both models
-        hrem_params = None
-        if hrem_result and "best_params" in hrem_result:
-            hrem_params = HREMParams(**hrem_result["best_params"])
-        else:
-            # For demo purposes, we'll create a simple set of optimized params
-            hrem_params = HREMParams(
-                m_loc=128,
-                d_mem=128,
-                top_k=4,
-                H_layers=2,
-                L_layers=2,
-                H_cycles=2,
-                L_cycles=8,
-                hidden_size=256
-            )
-        
-        hrm_params = None
-        if hrm_result and "best_params" in hrm_result:
-            hrm_params = hrm_result["best_params"]
         
         elapsed_time = time.time() - start_time
-        console.print(f"[dim]⏱️  Total optimization completed in {elapsed_time:.1f} seconds[/dim]")
+        console.print(f"[dim]⏱️  {model_config.name} optimization completed in {elapsed_time:.1f} seconds[/dim]")
         
-        return hrem_params, {
-            "hrem_result": hrem_result,
-            "hrm_result": hrm_result,
-            "hrm_params": hrm_params,
-            "hrm_score": 0.0  # For compatibility with existing code
-        }
+        return result
     
-    def run_final_evaluation(self, optimized_params: HREMParams, hrm_config: Dict[str, Any], study_name: str, data_config: DataConfig) -> Dict[str, Any]:
-        """Run final evaluation with both optimized HRM and HREM."""
+    def run_hyperparameter_optimization(self, study_name: str, data_config: DataConfig, model_configs: List[ModelConfig] = None) -> Dict[str, Any]:
+        """Run hyperparameter optimization for all provided models."""
+        ResultsDisplay.display_iteration_header("🔍 Step 2: Guided Hyperparameter Optimization", 
+                               f"Optimizing hyperparameters for all models on {data_config.dataset} dataset with real-time performance feedback...")
+        console.print("[dim]💡 Key advantage: Results are generated after each iteration![/dim]")
+        console.print()
+        
+        # If no specific models provided, use default HRM and HREM
+        if model_configs is None:
+            model_configs = [
+                ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"),
+                ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1")
+            ]
+        
+        # Run optimization for each model
+        optimization_results = {}
+        for model_config in model_configs:
+            console.print(f"[bold blue]Running {model_config.name} hyperparameter optimization...[/bold blue]")
+            result = self.run_hyperparameter_optimization_for_model(model_config, study_name, data_config)
+            optimization_results[model_config.name] = result
+        
+        return optimization_results
+    
+    def run_final_evaluation(self, optimized_results: Dict[str, Any], baseline_model_configs: List[ModelConfig], study_name: str, data_config: DataConfig) -> Dict[str, Any]:
+        """Run final evaluation with all optimized models."""
         ResultsDisplay.display_iteration_header("🏆 Step 3: Final Performance Comparison", 
-                               f"Running final comparison with optimized HRM and HREM parameters on {data_config.dataset} dataset...")
+                               f"Running final comparison with optimized parameters on {data_config.dataset} dataset...")
         
         config_settings = self.config.config_settings
         
         # Create model configurations with optimized parameters
-        hrem_model_config = ModelConfig(
-            name="HREM_best",
-            algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm",
-            base_arch_config="hrem_v1",
-            hrem_params=optimized_params
-        )
+        final_model_configs = []
         
-        # For HRM, we pass parameters as arch_overrides
-        hrm_model_config = ModelConfig(
-            name="HRM_best",
-            algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
-            base_arch_config="hrm_v1",
-            arch_overrides=hrm_config or {}
-        )
+        # Add optimized versions of all models that were optimized
+        for model_name, opt_result in optimized_results.items():
+            if opt_result and "best_params" in opt_result:
+                # Find the corresponding baseline model config
+                baseline_config = None
+                for config in baseline_model_configs:
+                    if config.name == model_name:
+                        baseline_config = config
+                        break
+                
+                if baseline_config:
+                    if "hrem" in baseline_config.algorithm_class.lower():
+                        # For HREM models, pass parameters as hrem_params
+                        hrem_params = HREMParams(**opt_result["best_params"])
+                        optimized_config = ModelConfig(
+                            name=f"{model_name}_best",
+                            algorithm_class=baseline_config.algorithm_class,
+                            base_arch_config=baseline_config.base_arch_config,
+                            hrem_params=hrem_params
+                        )
+                    else:
+                        # For other models, pass parameters as arch_overrides
+                        optimized_config = ModelConfig(
+                            name=f"{model_name}_best",
+                            algorithm_class=baseline_config.algorithm_class,
+                            base_arch_config=baseline_config.base_arch_config,
+                            arch_overrides=opt_result["best_params"] or {}
+                        )
+                    final_model_configs.append(optimized_config)
+        
+        # Also add the baseline models for comparison (like EnhancedHREM)
+        for config in baseline_model_configs:
+            # Only add baseline models that weren't optimized
+            if config.name not in optimized_results:
+                final_model_configs.append(config)
+        
+        if not final_model_configs:
+            console.print("[bold yellow]No models to evaluate in final comparison.[/bold yellow]")
+            return {}
+        
+        # Create evaluation config with all final models
+        eval_config_dict = {
+            "n_runs": 1
+        }
+        
+        # Add models to evaluation config (up to 5 models supported directly)
+        model_keys = ["model_a", "model_b", "model_c", "model_d", "model_e"]
+        for i, model_config in enumerate(final_model_configs):
+            if i < len(model_keys):
+                eval_config_dict[model_keys[i]] = model_config
+            else:
+                break  # Only support up to 5 models directly
         
         config = ExperimentConfig(
             mode="evaluate",
@@ -669,11 +658,7 @@ class ExperimentRunner:
                 epochs=config_settings["final_epochs"], 
                 eval_interval=config_settings["final_eval_interval"]
             ),
-            evaluation_config=EvaluationConfig(
-                n_runs=1,
-                model_a=hrm_model_config,
-                model_b=hrem_model_config
-            )
+            evaluation_config=EvaluationConfig(**eval_config_dict)
         )
         
         start_time = time.time()
@@ -771,11 +756,18 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         console.print("• Generates actionable results after each iteration")
         console.print("• Continuously improves based on real-time feedback")
         
+        # Define the models to compare
+        model_configs = [
+            ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"),
+            ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1"),
+            ModelConfig(name="EnhancedHREM", algorithm_class="hrm_system.algorithms.enhanced_hrem.EnhancedHREMAlgorithm", base_arch_config="enhanced_hrem_v1")
+        ]
+        
         # Create experiment runner
         runner = ExperimentRunner(demo_config)
         
         # Step 1: Baseline evaluation
-        baseline_results = runner.run_baseline_evaluation("cli_demo_baseline", selected_challenge.data_config)
+        baseline_results = runner.run_baseline_evaluation("cli_demo_baseline", selected_challenge.data_config, model_configs)
         ResultsDisplay.display_model_detailed_stats("📊 Baseline Results", baseline_results)
         ResultsDisplay.display_current_leader(baseline_results)
         
@@ -786,21 +778,28 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
                 pass  # Continue if input is not available
         
         # Step 2: Hyperparameter optimization
-        hrem_params, optimization_details = runner.run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config)
-        ResultsDisplay.display_hrem_params("⚙️ Optimized HREM Parameters", hrem_params)
+        # Only optimize HRM and HREM, keep EnhancedHREM as baseline for comparison
+        models_to_optimize = [
+            ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"),
+            ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1")
+        ]
         
-        hrm_params = optimization_details.get("hrm_params", {})
-        console.print("\n[bold blue]HRM Optimization Results:[/bold blue]")
-        if hrm_params:
-            # Display HRM parameters in a table
-            hrm_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
-            hrm_table.add_column("Parameter", style="dim")
-            hrm_table.add_column("Value", justify="right")
-            for key, value in hrm_params.items():
-                hrm_table.add_row(key, str(value))
-            console.print(hrm_table)
-        else:
-            console.print("  No HRM parameters found")
+        optimization_results = runner.run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config, models_to_optimize)
+        
+        # Display optimization results
+        for model_name, opt_result in optimization_results.items():
+            if opt_result and "best_params" in opt_result:
+                console.print(f"\n[bold blue]{model_name} Optimization Results:[/bold blue]")
+                # Display parameters in a table
+                params_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+                params_table.add_column("Parameter", style="dim")
+                params_table.add_column("Value", justify="right")
+                for key, value in opt_result["best_params"].items():
+                    params_table.add_row(key, str(value))
+                console.print(params_table)
+            else:
+                console.print(f"\n[bold blue]{model_name} Optimization Results:[/bold blue]")
+                console.print("  No optimization parameters found")
         
         if interactive:
             try:
@@ -809,7 +808,7 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
                 pass  # Continue if input is not available
         
         # Step 3: Final comparison
-        final_results = runner.run_final_evaluation(hrem_params, hrm_params, "cli_demo_final", selected_challenge.data_config)
+        final_results = runner.run_final_evaluation(optimization_results, model_configs, "cli_demo_final", selected_challenge.data_config)
         ResultsDisplay.display_model_detailed_stats("📊 Final Results", final_results)
         
         # Show improvements for all models

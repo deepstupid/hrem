@@ -85,7 +85,7 @@ def display_model_detailed_stats(title: str, results: Dict[str, Any], model_name
     """Display detailed statistics for models including parameter counts and performance metrics."""
     if not model_names:
         # Determine which models are present in the results
-        model_names = [name for name in ['HRM', 'HREM', 'HREM_best'] if name in results]
+        model_names = [name for name in ['HRM', 'HREM', 'HRM_best', 'HREM_best'] if name in results]
     
     if not model_names:
         return
@@ -94,7 +94,7 @@ def display_model_detailed_stats(title: str, results: Dict[str, Any], model_name
     table.add_column("Metric", style="cyan")
     
     # Add columns for each model
-    model_styles = {"HRM": "bold blue", "HREM": "bold green", "HREM_best": "bold bright_green"}
+    model_styles = {"HRM": "bold blue", "HREM": "bold green", "HREM_best": "bold bright_green", "HRM_best": "bold blue"}
     for model_name in model_names:
         style = model_styles.get(model_name, "bold white")
         table.add_column(model_name, justify="right", style=style)
@@ -146,9 +146,10 @@ def display_model_comparison_summary(results: Dict[str, Any]):
     table.add_column("Accuracy", justify="right")
     table.add_column("Loss", justify="right")
     table.add_column("Steps", justify="right")
+    table.add_column("Parameters", justify="right")
     
-    models = ['HRM', 'HREM', 'HREM_best']
-    model_styles = {"HRM": "bold blue", "HREM": "bold green", "HREM_best": "bold bright_green"}
+    models = ['HRM', 'HREM', 'HRM_best', 'HREM_best']
+    model_styles = {"HRM": "bold blue", "HREM": "bold green", "HREM_best": "bold bright_green", "HRM_best": "bold blue"}
     
     for model_name in models:
         if model_name in results and results[model_name]:
@@ -156,6 +157,7 @@ def display_model_comparison_summary(results: Dict[str, Any]):
             accuracy = metrics.get('all/accuracy', 'N/A')
             loss = metrics.get('all/lm_loss', 'N/A')
             steps = metrics.get('all/steps', 'N/A')
+            params = metrics.get('num_params', 'N/A')
             
             # Format values
             if isinstance(accuracy, (int, float)):
@@ -164,10 +166,58 @@ def display_model_comparison_summary(results: Dict[str, Any]):
                 loss = f"{loss:.4f}"
             if isinstance(steps, (int, float)):
                 steps = f"{steps:.0f}"
+            if isinstance(params, (int, float)):
+                params = f"{params:,}"
                 
             style = model_styles.get(model_name, "white")
-            table.add_row(f"[{style}]{model_name}[/{style}]", accuracy, loss, steps)
+            table.add_row(f"[{style}]{model_name}[/{style}]", accuracy, loss, steps, params)
             
+    console.print(table)
+
+def display_side_by_side_comparison(title: str, baseline_results: Dict[str, Any], optimized_results: Dict[str, Any]):
+    """Display a clear side-by-side comparison of baseline vs optimized results."""
+    console.print(Panel(f"[bold]{title}[/bold]", expand=False))
+    
+    # Create comparison table
+    table = Table(show_header=True, header_style="bold magenta", box=box.ROUNDED)
+    table.add_column("Metric", style="cyan")
+    table.add_column("HRM Baseline", justify="right", style="bold blue")
+    table.add_column("HRM Optimized", justify="right", style="bold blue")
+    table.add_column("HREM Baseline", justify="right", style="bold green")
+    table.add_column("HREM Optimized", justify="right", style="bold bright_green")
+    
+    # Key metrics for comparison
+    metrics_info = [
+        ('all/accuracy', 'Accuracy'),
+        ('all/lm_loss', 'Loss'),
+        ('all/steps', 'Steps'),
+        ('num_params', 'Parameters')
+    ]
+    
+    for key, display_name in metrics_info:
+        # Get values for each model
+        hrm_baseline = baseline_results.get('HRM', {}).get(key, 'N/A')
+        hrm_optimized = optimized_results.get('HRM_best', {}).get(key, 'N/A')
+        hrem_baseline = baseline_results.get('HREM', {}).get(key, 'N/A')
+        hrem_optimized = optimized_results.get('HREM_best', {}).get(key, 'N/A')
+        
+        # Format values
+        def format_value(val):
+            if isinstance(val, (int, float)):
+                if key == 'num_params':
+                    return f"{val:,}"
+                else:
+                    return f"{val:.4f}"
+            return str(val)
+        
+        table.add_row(
+            display_name,
+            format_value(hrm_baseline),
+            format_value(hrm_optimized),
+            format_value(hrem_baseline),
+            format_value(hrem_optimized)
+        )
+    
     console.print(table)
 
 def display_current_leader(hrm_score: float, hrem_score: float):
@@ -542,7 +592,13 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
         hrm_params = optimization_details.get("hrm_params", {})
         console.print("\n[bold blue]HRM Optimization Results:[/bold blue]")
         if hrm_params:
-            console.print(f"  Best HRM params: {hrm_params}")
+            # Display HRM parameters in a table
+            hrm_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+            hrm_table.add_column("Parameter", style="dim")
+            hrm_table.add_column("Value", justify="right")
+            for key, value in hrm_params.items():
+                hrm_table.add_row(key, str(value))
+            console.print(hrm_table)
         else:
             console.print("  No HRM parameters found")
         
@@ -575,8 +631,11 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
         # Summary
         display_iteration_header("✅ Demonstration Completed Successfully!")
         
+        # Display side-by-side comparison
+        display_side_by_side_comparison("📊 Side-by-Side Performance Comparison", baseline_results, final_results)
+        
         # Performance summary
-        console.print("[bold]📈 Performance Summary:[/bold]")
+        console.print("\n[bold]📈 Performance Summary:[/bold]")
         console.print(f"  HRM baseline performance:           {hrm_baseline_acc:.4f}")
         console.print(f"  HREM baseline performance:          {hrem_baseline_acc:.4f}")
         

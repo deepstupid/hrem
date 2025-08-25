@@ -10,7 +10,7 @@ import os
 import argparse
 import warnings
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -270,20 +270,58 @@ def run_baseline_evaluation(study_name: str, is_fast_mode: bool = False) -> Dict
         
     return results.get("results", {})
 
-def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False) -> HREMParams:
-    """Run hyperparameter optimization for HREM with real-time updates."""
+def calculate_balanced_score(accuracy: float, num_params: int, target_params: int = 100000) -> float:
+    """
+    Calculate a balanced score that considers both accuracy and parameter count.
+    
+    Args:
+        accuracy: Model accuracy (higher is better)
+        num_params: Number of parameters (lower is better for efficiency)
+        target_params: Target parameter count for balancing
+        
+    Returns:
+        Balanced score (higher is better)
+    """
+    # Convert to numbers if they're strings
+    try:
+        accuracy = float(accuracy)
+        num_params = int(num_params)
+        target_params = int(target_params)
+    except (ValueError, TypeError):
+        return 0.0  # Return a default score if conversion fails
+    
+    # Avoid division by zero
+    if target_params == 0:
+        return accuracy
+    
+    # Normalize parameter count (0-1 scale, where 1 is perfect match to target)
+    param_score = 1.0 - abs(num_params - target_params) / target_params
+    # Clamp to [0, 1] range
+    param_score = max(0.0, min(1.0, param_score))
+    
+    # Combine accuracy and parameter efficiency (you can adjust weights)
+    # For now, we'll use a simple weighted average
+    accuracy_weight = 0.7
+    param_weight = 0.3
+    
+    return accuracy_weight * accuracy + param_weight * param_score
+
+def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False) -> Tuple[HREMParams, Dict[str, Any]]:
+    """Run hyperparameter optimization for both HRM and HREM with competitive parameter counts."""
     display_iteration_header("🔍 Step 2: Guided Hyperparameter Optimization", 
-                           "Optimizing HREM hyperparameters with real-time performance feedback...")
+                           "Optimizing both HRM and HREM hyperparameters with real-time performance feedback...")
     console.print("[dim]💡 Key advantage: Results are generated after each iteration![/dim]")
     console.print()
     
     config_settings = get_config_settings(is_fast_mode)
     
-    config = ExperimentConfig(
+    # First, optimize HREM
+    console.print("[bold blue]Optimizing HREM model...[/bold blue]")
+    hrem_config = ExperimentConfig(
         mode="optimize",
         run_config=RunConfig(
             smoke_test=True,
-            study_name=study_name,
+            study_name=f"{study_name}_hrem",
             logger_callback=DemoLogger().log
         ),
         data_config=DataConfig(dataset="synthetic", synthetic_task="copy"),
@@ -300,41 +338,143 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
     )
     
     start_time = time.time()
-    # Run optimization
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         transient=True,
     ) as progress:
-        progress.add_task(description="Running hyperparameter optimization...", total=None)
-        result = run_optimization(config)
+        progress.add_task(description="Running HREM hyperparameter optimization...", total=None)
+        hrem_result = run_optimization(hrem_config)
+    
+    hrem_elapsed = time.time() - start_time
+    console.print(f"[dim]⏱️  HREM optimization completed in {hrem_elapsed:.1f} seconds[/dim]")
+    
+    # Then, optimize HRM with a similar parameter budget
+    console.print("[bold blue]Optimizing HRM model with competitive parameter count...[/bold blue]")
+    
+    # Get HREM's parameter count from the optimization results
+    hrem_params_count = 0
+    if hrem_result and "results" in hrem_result and "HREM_best" in hrem_result["results"]:
+        hrem_params_raw = hrem_result["results"]["HREM_best"].get("num_params", 0)
+        try:
+            hrem_params_count = int(hrem_params_raw)
+        except (ValueError, TypeError):
+            hrem_params_count = 0
+    
+    # For HRM optimization, we'll run a simple evaluation with different configurations
+    # to find a competitive parameter count
+    best_hrm_config = None
+    best_hrm_score = -float('inf')
+    
+    # Try different HRM configurations to match HREM's parameter count
+    hrm_variants = [
+        {"hidden_size": 64, "memory_size": 32},
+        {"hidden_size": 128, "memory_size": 64},
+        {"hidden_size": 256, "memory_size": 128},
+        {"hidden_size": 512, "memory_size": 256},
+    ]
+    
+    for i, variant in enumerate(hrm_variants):
+        console.print(f"[dim]Testing HRM variant {i+1}/{len(hrm_variants)}...[/dim]")
+        hrm_eval_config = ExperimentConfig(
+            mode="evaluate",
+            run_config=RunConfig(
+                smoke_test=True,
+                study_name=f"{study_name}_hrm_variant_{i}",
+                logger_callback=DemoLogger().log
+            ),
+            data_config=DataConfig(dataset="synthetic", synthetic_task="copy"),
+            training_config=TrainingConfig(
+                epochs=config_settings["opt_epochs"], 
+                eval_interval=config_settings["opt_eval_interval"]
+            ),
+            evaluation_config=EvaluationConfig(
+                n_runs=1,
+                model_a=ModelConfig(
+                    name="HRM",
+                    algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
+                    base_arch_config="hrm_v1",
+                    arch_overrides=variant
+                )
+            )
+        )
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+        ) as progress:
+            progress.add_task(description=f"Testing HRM variant {i+1}...", total=None)
+            hrm_eval_result = run_evaluation(hrm_eval_config)
+        
+        if hrm_eval_result and "results" in hrm_eval_result and "HRM" in hrm_eval_result["results"]:
+            hrm_metrics = hrm_eval_result["results"]["HRM"]
+            hrm_accuracy = hrm_metrics.get("all/accuracy", 0)
+            hrm_params = hrm_metrics.get("num_params", 0)
+            
+            # Calculate balanced score
+            # Convert to numbers if they're strings
+            try:
+                hrm_accuracy = float(hrm_accuracy) if isinstance(hrm_accuracy, str) else hrm_accuracy
+                hrm_params = int(float(hrm_params)) if isinstance(hrm_params, (str, float)) else int(hrm_params)
+            except (ValueError, TypeError):
+                hrm_accuracy = 0.0
+                hrm_params = 0
+            
+            # Calculate balanced score
+            hrm_score = calculate_balanced_score(hrm_accuracy, hrm_params, hrem_params_count)
+            
+            if hrm_score > best_hrm_score:
+                best_hrm_score = hrm_score
+                best_hrm_config = variant
     
     elapsed_time = time.time() - start_time
-    console.print(f"[dim]⏱️  Optimization completed in {elapsed_time:.1f} seconds[/dim]")
+    console.print(f"[dim]⏱️  HRM optimization completed in {elapsed_time:.1f} seconds[/dim]")
     
-    # Return the best parameters
-    if result and "best_params" in result:
-        return HREMParams(**result["best_params"])
+    # Return the best parameters for both models
+    hrem_params = None
+    if hrem_result and "best_params" in hrem_result:
+        hrem_params = HREMParams(**hrem_result["best_params"])
+    else:
+        # For demo purposes, we'll create a simple set of optimized params
+        hrem_params = HREMParams(
+            m_loc=128,
+            d_mem=128,
+            top_k=4,
+            H_layers=2,
+            L_layers=2,
+            H_cycles=2,
+            L_cycles=8,
+            hidden_size=256
+        )
     
-    # For demo purposes, we'll create a simple set of optimized params
-    # In a real implementation, we would extract the best params from the study
-    return HREMParams(
-        m_loc=128,
-        d_mem=128,
-        top_k=4,
-        H_layers=2,
-        L_layers=2,
-        H_cycles=2,
-        L_cycles=8,
-        hidden_size=256
-    )
+    return hrem_params, {
+        "hrem_result": hrem_result,
+        "hrm_config": best_hrm_config,
+        "hrm_score": best_hrm_score
+    }
 
-def run_final_evaluation(optimized_params: HREMParams, study_name: str, is_fast_mode: bool = False) -> Dict[str, Any]:
-    """Run final evaluation with optimized HREM."""
+def run_final_evaluation(optimized_params: HREMParams, hrm_config: Dict[str, Any], study_name: str, is_fast_mode: bool = False) -> Dict[str, Any]:
+    """Run final evaluation with both optimized HRM and HREM."""
     display_iteration_header("🏆 Step 3: Final Performance Comparison", 
-                           "Running final comparison with optimized HREM parameters...")
+                           "Running final comparison with optimized HRM and HREM parameters...")
     
     config_settings = get_config_settings(is_fast_mode)
+    
+    # Create model configurations with optimized parameters
+    hrem_model_config = ModelConfig(
+        name="HREM_best",
+        algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm",
+        base_arch_config="hrem_v1",
+        hrem_params=optimized_params
+    )
+    
+    hrm_model_config = ModelConfig(
+        name="HRM_best",
+        algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
+        base_arch_config="hrm_v1",
+        arch_overrides=hrm_config or {}
+    )
     
     config = ExperimentConfig(
         mode="evaluate",
@@ -350,12 +490,8 @@ def run_final_evaluation(optimized_params: HREMParams, study_name: str, is_fast_
         ),
         evaluation_config=EvaluationConfig(
             n_runs=1,
-            model_b=ModelConfig(
-                name="HREM_best",
-                algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm",
-                base_arch_config="hrem_v1",
-                hrem_params=optimized_params
-            )
+            model_a=hrm_model_config,
+            model_b=hrem_model_config
         )
     )
     
@@ -421,8 +557,13 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
                 pass  # Continue if input is not available
         
         # Step 2: Hyperparameter optimization
-        optimization_results = run_hyperparameter_optimization("cli_demo_optimization", is_fast_mode)
-        display_hrem_params("⚙️ Optimized HREM Parameters", optimization_results)
+        hrem_params, optimization_details = run_hyperparameter_optimization("cli_demo_optimization", is_fast_mode)
+        display_hrem_params("⚙️ Optimized HREM Parameters", hrem_params)
+        
+        hrm_config = optimization_details.get("hrm_config", {})
+        console.print("\n[bold blue]HRM Optimization Results:[/bold blue]")
+        console.print(f"  Best HRM config: {hrm_config}")
+        console.print(f"  HRM balanced score: {optimization_details.get('hrm_score', 0):.4f}")
         
         if interactive:
             try:
@@ -431,7 +572,7 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
                 pass  # Continue if input is not available
         
         # Step 3: Final comparison
-        final_results = run_final_evaluation(optimization_results, "cli_demo_final", is_fast_mode)
+        final_results = run_final_evaluation(hrem_params, hrm_config, "cli_demo_final", is_fast_mode)
         display_model_detailed_stats("📊 Final Results", final_results)
         
         # Show improvement
@@ -457,36 +598,70 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
         console.print("[bold]📈 Performance Summary:[/bold]")
         console.print(f"  HRM baseline performance:           {hrm_baseline_acc:.4f}")
         console.print(f"  HREM baseline performance:          {hrem_baseline_acc:.4f}")
-        console.print(f"  HREM optimized performance:         {hrem_final_acc:.4f}")
         
-        improvement = hrem_final_acc - hrem_baseline_acc
-        console.print(f"  Performance improvement:            {improvement:+.4f}")
-        
-        # Cost-benefit analysis
-        console.print("\n[bold]💰 Cost-Benefit Analysis:[/bold]")
-        hrm_params = baseline_results.get('HRM', {}).get('num_params', 0)
-        hrem_params = baseline_results.get('HREM', {}).get('num_params', 0)
+        # Get optimized model performances
+        hrm_final_acc = final_results.get('HRM_best', {}).get('all/accuracy', 0)
         try:
-            hrm_params = int(hrm_params) if isinstance(hrm_params, str) else hrm_params
-            hrem_params = int(hrem_params) if isinstance(hrem_params, str) else hrem_params
+            hrm_final_acc = float(hrm_final_acc) if isinstance(hrm_final_acc, str) else hrm_final_acc
         except (ValueError, TypeError):
             pass
             
-        if hrm_params and hrem_params:
-            param_increase = ((hrem_params - hrm_params) / hrm_params) * 100
-            console.print(f"  HRM parameter count:                {hrm_params:,}")
-            console.print(f"  HREM parameter count:               {hrem_params:,}")
-            console.print(f"  Parameter increase:                 {param_increase:+.1f}%")
+        console.print(f"  HRM optimized performance:          {hrm_final_acc:.4f}")
+        console.print(f"  HREM optimized performance:         {hrem_final_acc:.4f}")
+        
+        hrem_improvement = hrem_final_acc - hrem_baseline_acc
+        hrm_improvement = hrm_final_acc - hrm_baseline_acc
+        console.print(f"  HREM performance improvement:       {hrem_improvement:+.4f}")
+        console.print(f"  HRM performance improvement:        {hrm_improvement:+.4f}")
+        
+        # Cost-benefit analysis
+        console.print("\n[bold]💰 Cost-Benefit Analysis:[/bold]")
+        hrm_baseline_params = baseline_results.get('HRM', {}).get('num_params', 0)
+        hrem_baseline_params = baseline_results.get('HREM', {}).get('num_params', 0)
+        try:
+            hrm_baseline_params = int(float(hrm_baseline_params)) if isinstance(hrm_baseline_params, (str, float)) else int(hrm_baseline_params)
+            hrem_baseline_params = int(float(hrem_baseline_params)) if isinstance(hrem_baseline_params, (str, float)) else int(hrem_baseline_params)
+        except (ValueError, TypeError):
+            hrm_baseline_params = 0
+            hrem_baseline_params = 0
             
-            if improvement > 0 and param_increase > 0:
-                efficiency_ratio = improvement / (param_increase / 100)
-                console.print(f"  Efficiency ratio (accuracy gain per 1% params): {efficiency_ratio:.2f}")
+        # Get optimized model parameter counts
+        hrm_final_params = final_results.get('HRM_best', {}).get('num_params', 0)
+        hrem_final_params = final_results.get('HREM_best', {}).get('num_params', 0)
+        try:
+            hrm_final_params = int(float(hrm_final_params)) if isinstance(hrm_final_params, (str, float)) else int(hrm_final_params)
+            hrem_final_params = int(float(hrem_final_params)) if isinstance(hrem_final_params, (str, float)) else int(hrem_final_params)
+        except (ValueError, TypeError):
+            hrm_final_params = 0
+            hrem_final_params = 0
+            
+        if hrm_baseline_params and hrem_baseline_params:
+            baseline_param_increase = ((hrem_baseline_params - hrm_baseline_params) / hrm_baseline_params) * 100
+            console.print(f"  HRM baseline parameter count:       {hrm_baseline_params:,}")
+            console.print(f"  HREM baseline parameter count:      {hrem_baseline_params:,}")
+            console.print(f"  Baseline parameter difference:      {baseline_param_increase:+.1f}%")
+            
+        if hrm_final_params and hrem_final_params:
+            final_param_increase = ((hrem_final_params - hrm_final_params) / hrm_final_params) * 100 if hrm_final_params != 0 else 0
+            console.print(f"  HRM optimized parameter count:      {hrm_final_params:,}")
+            console.print(f"  HREM optimized parameter count:     {hrem_final_params:,}")
+            console.print(f"  Optimized parameter difference:     {final_param_increase:+.1f}%")
+            
+            # Efficiency ratios
+            if hrem_improvement > 0 and final_param_increase > 0:
+                hrem_efficiency = hrem_improvement / (final_param_increase / 100)
+                console.print(f"  HREM efficiency ratio:              {hrem_efficiency:.2f} (accuracy gain per 1% params)")
+                
+            if hrm_improvement != 0 and final_param_increase != 0:  # Avoid division by zero
+                hrm_efficiency = hrm_improvement / (final_param_increase / 100) if final_param_increase != 0 else 0
+                console.print(f"  HRM efficiency ratio:               {hrm_efficiency:.2f} (accuracy gain per 1% params)")
         
         # Key insights
         console.print("\n[bold]🔑 Key Insights:[/bold]")
         console.print("• HRM: Traditional recurrent model with external memory")
         console.print("• HREM: Hierarchical approach with multiple memory layers")
-        console.print("• Guided optimization improves HREM performance iteratively")
+        console.print("• Multi-objective optimization balances accuracy and parameter efficiency")
+        console.print("• Both models are optimized for fair parameter count comparison")
         console.print("• Each iteration provides actionable insights for improvement")
         
         # Unique features

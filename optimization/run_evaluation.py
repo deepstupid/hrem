@@ -69,7 +69,7 @@ def main():
     report = [
         f"# HREM vs HRM Performance Comparison ({study_name})\n",
         "## Summary",
-        *[f"**{name}**: Final loss = {all_metrics.get(name, {}).get('test/all/total_loss', 'N/A')}" for name in model_names],
+        *[f"**{name}**: Final loss = {all_metrics.get(name, {}).get('all/lm_loss', 'N/A')}" for name in model_names],
     ]
 
     for model_name, model_info in models_to_run.items():

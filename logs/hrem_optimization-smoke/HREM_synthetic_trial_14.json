@@ -1,14 +1,14 @@
 [
     {
         "step": 0,
-        "num_params": 98365
+        "num_params": 49193
     },
     {
         "step": 1,
         "train/accuracy": 0.0,
         "train/count": 0.0,
         "train/exact_accuracy": 0.0,
-        "train/lm_loss": 2.418359873215123,
+        "train/lm_loss": 2.4239100193888543,
         "train/q_continue_loss": 0.04017925262451172,
         "train/q_halt_accuracy": 0.0,
         "train/q_halt_loss": 0.006715297698974609,
@@ -18,9 +18,9 @@
     {
         "step": 10,
         "all": {
-            "accuracy": 0.15000002086162567,
+            "accuracy": 0.07999999821186066,
             "exact_accuracy": 0.0,
-            "lm_loss": 2.649441719055176,
+            "lm_loss": 2.489982843399048,
             "q_halt_accuracy": 1.0,
             "q_halt_loss": 0.006715297698974609,
             "steps": 16.0

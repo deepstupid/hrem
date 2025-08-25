@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import pandas as pd
+import yaml
 from rich.console import Console
 
 LOGS_DIR = Path("logs")
@@ -26,19 +27,40 @@ def run_command(command: list[str], console: Console, error_message: str, live_a
         raise
 
 def aggregate_metrics(metrics_list: list[dict]):
+    """Aggregates metrics from a list of dictionaries, calculating mean and std dev."""
+    if not metrics_list:
+        return {}
+
+    # Filter out empty or non-dictionary metrics from the list
+    metrics_list = [m for m in metrics_list if isinstance(m, dict) and m]
     if not metrics_list:
         return {}
 
     flat_metrics = [pd.json_normalize(m, sep='/').to_dict(orient='records')[0] for m in metrics_list]
     df = pd.DataFrame(flat_metrics)
 
+    # Convert all columns to numeric, coercing errors to NaN
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
     if len(df) == 1:
-        return df.iloc[0].apply(lambda x: f"{x:.4f}").to_dict()
+        return df.iloc[0].apply(lambda x: f"{x:.4f}" if pd.notna(x) else "N/A").to_dict()
 
     mean = df.mean()
     std = df.std()
 
-    result = {key: f"{mean[key]:.4f} ± {std[key]:.4f}" for key in mean.index}
+    result = {}
+    for key in mean.index:
+        if pd.isna(mean[key]):
+            result[key] = "N/A"
+            continue
+
+        # If std is NaN or zero, just report the mean
+        if pd.isna(std[key]) or std[key] == 0:
+            result[key] = f"{mean[key]:.4f}"
+        else:
+            result[key] = f"{mean[key]:.4f} ± {std[key]:.4f}"
+
     return result
 
 def run_model(args, console: Console, model_name: str, config_name: str, hparams=None, trial_num=None, live_active=False, study_name=None, run_idx=0):
@@ -82,9 +104,14 @@ def run_model(args, console: Console, model_name: str, config_name: str, hparams
     if hparams:
         base_config = "hrm_v1"
         hparam_args.extend(["arch.name=hrm.hrem@HREM", "+arch.use_memory=True"])
-        new_hrem_params = ["m_loc", "d_mem", "top_k"]
+
+        # Load the base config to check for existing keys
+        with open("config/arch/hrm_v1.yaml", 'r') as f:
+            base_model_config = yaml.safe_load(f)
+
         for key, value in hparams.items():
-            if key in new_hrem_params:
+            # If key is not in the base model config, add it with a '+'
+            if key not in base_model_config:
                 hparam_args.append(f"+arch.{key}={value}")
             else:
                 hparam_args.append(f"arch.{key}={value}")
@@ -133,15 +160,34 @@ def run_model(args, console: Console, model_name: str, config_name: str, hparams
 
     with open(log_path, "r") as f:
         data = json.load(f)
-    final_metrics = data[-1]
+
+    if not data:
+        console.print(f"[bold yellow]Warning: Log file {log_path} is empty.[/bold yellow]")
+        return {}
+
+    # Find the entry with the best loss
+    best_entry = min(data, key=lambda x: x.get('all', {}).get('lm_loss', float('inf')), default=None)
+
+    if best_entry is None:
+        # Fallback to the last entry if no entry has the desired metric
+        best_entry = data[-1] if data else {}
+
+    # Flatten the metrics dictionary
+    if best_entry:
+        final_metrics = pd.json_normalize(best_entry, sep='/').to_dict(orient='records')[0]
+    else:
+        final_metrics = {}
 
     if log_path.exists():
-        if trial_num is not None and study_name:
+        if study_name:
             log_dir = LOGS_DIR / study_name
             log_dir.mkdir(parents=True, exist_ok=True)
             new_log_path = log_dir / f"{run_name}.json"
             log_path.rename(new_log_path)
         else:
+            # If there's no study name, we can't save it to a specific folder,
+            # so we just remove the temporary log file.
+            # This case should ideally not be hit in the optimizer workflow.
             log_path.unlink()
 
     return final_metrics

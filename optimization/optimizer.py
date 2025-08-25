@@ -32,7 +32,11 @@ def objective(trial: optuna.trial.Trial, args, console: Console, study_name: str
 
     try:
         metrics = run_model(args, console, "HREM", "hrm_v1", hparams=params, trial_num=trial.number, live_active=live_active, study_name=study_name)
-        return metrics.get('test/all/total_loss', float('inf'))
+        # Use a more reliable metric from the logs
+        loss = metrics.get('all/lm_loss', float('inf'))
+        if loss is None:
+            loss = float('inf')
+        return loss
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         console.print(f"[bold red]Trial {trial.number} failed and will be pruned.[/bold red]")
         if isinstance(e, subprocess.CalledProcessError):
@@ -137,8 +141,8 @@ def main():
     report = [
         f"# HREM vs HRM Performance Comparison ({study_name})\n",
         "## Summary",
-        f"**Best HREM**: Final loss = {best_hrem_metrics.get('test/all/total_loss', 'N/A')}",
-        f"**HRM**: Final loss = {hrm_metrics.get('test/all/total_loss', 'N/A')}\n",
+        f"**Best HREM**: Final loss = {best_hrem_metrics.get('all/lm_loss', 'N/A')}",
+        f"**HRM**: Final loss = {hrm_metrics.get('all/lm_loss', 'N/A')}\n",
         "## Best HREM Parameters",
         "| Parameter | Value |",
         "|---|---|",

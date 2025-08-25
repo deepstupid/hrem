@@ -134,7 +134,6 @@ def run_model(args, console: Console, model_name: str, config_name: str, hparams
             log_path.unlink()
 
     return final_metrics
-
 def objective(trial: optuna.trial.Trial, args, console: Console, study_name: str, live_active: bool = False):
     params = {
         "m_loc": trial.suggest_int("m_loc", 64, 128 if args.smoke_test else 256),
@@ -197,6 +196,9 @@ def main():
     parser.add_argument("--storage", type=str, default="sqlite:///optuna_hrem.db", help="Optuna storage URL.")
     parser.add_argument("--n-final-runs", type=int, default=1, help="Number of final comparison runs for statistical significance.")
     args = parser.parse_args()
+
+    if args.smoke_test:
+        args.dataset = "synthetic"
 
     console = Console()
     study_name = f"{args.study_name}-smoke" if args.smoke_test else args.study_name
@@ -269,7 +271,7 @@ def main():
         *[f"| {key} | {value} |" for key, value in best_trial.params.items()],
         "\n## Final Metrics Comparison",
         "| Metric | HRM | Best HREM |",
-        "|---|---|---|",
+        "|---|---|",
         *[f"| {key} | {hrm_metrics.get(key, 'N/A')} | {best_hrem_metrics.get(key, 'N/A')} |" for key in all_keys],
     ]
 

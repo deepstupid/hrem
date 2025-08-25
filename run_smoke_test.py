@@ -2,6 +2,7 @@ import argparse
 import json
 from hrm_system.config import RunConfig, DataConfig, ModelConfig, TrainingConfig
 from hrm_system.runner import run_single_model
+from challenges import get_challenge_by_name
 
 def main():
     parser = argparse.ArgumentParser()
@@ -15,6 +16,8 @@ def main():
     parser.add_argument("--smoke_test", action="store_true")
     # For simplicity, we'll handle arch overrides as a JSON string
     parser.add_argument("--arch_overrides", type=str, default="{}")
+    # Allow specifying a challenge
+    parser.add_argument("--challenge", type=str, default="copy_task_beginner")
 
     args = parser.parse_args()
 
@@ -25,10 +28,19 @@ def main():
         log_path=args.log_path,
     )
 
-    data_config = DataConfig(
-        dataset="synthetic", # Smoke test uses synthetic dataset
-        path=args.data_path,
-    )
+    # Get data config from challenge system
+    challenge = get_challenge_by_name(args.challenge)
+    if challenge:
+        data_config = challenge.data_config
+        # Override the path if specified
+        if args.data_path:
+            data_config.path = args.data_path
+    else:
+        # Fallback to default synthetic dataset
+        data_config = DataConfig(
+            dataset="synthetic", # Smoke test uses synthetic dataset
+            path=args.data_path,
+        )
 
     arch_overrides = json.loads(args.arch_overrides)
 

@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
 from rich import box
+from rich.prompt import Prompt
 
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,6 +42,14 @@ from hrm_system import (
     run_optimization,
 )
 
+# Import the challenge system
+from challenges import (
+    Challenge,
+    ChallengeDifficulty,
+    get_all_challenges_sorted,
+    get_challenge_by_name
+)
+
 console = Console()
 
 class DemoLogger:
@@ -57,6 +66,55 @@ class DemoLogger:
             "FutureWarning" not in message and "UserWarning" not in message):
             console.print(message)
             self.messages.append(message)
+
+def display_challenge_menu() -> Challenge:
+    """Display a menu for selecting a challenge and return the selected challenge."""
+    console.clear()
+    console.print(Panel("[bold blue]🎯 HRM vs HREM Challenge Selection[/bold blue]", expand=False))
+    
+    challenges = get_all_challenges_sorted()
+    
+    # Group challenges by difficulty
+    difficulty_order = {
+        ChallengeDifficulty.BEGINNER: "🌱 Beginner",
+        ChallengeDifficulty.INTERMEDIATE: "🌿 Intermediate",
+        ChallengeDifficulty.ADVANCED: "🔥 Advanced",
+        ChallengeDifficulty.RESEARCH: "🔬 Research"
+    }
+    
+    # Display challenges grouped by difficulty
+    for difficulty in [ChallengeDifficulty.BEGINNER, ChallengeDifficulty.INTERMEDIATE, 
+                      ChallengeDifficulty.ADVANCED, ChallengeDifficulty.RESEARCH]:
+        difficulty_challenges = [c for c in challenges if c.difficulty == difficulty]
+        if difficulty_challenges:
+            console.print(f"\n[bold]{difficulty_order[difficulty]} Challenges:[/bold]")
+            for i, challenge in enumerate(difficulty_challenges, 1):
+                # Find the global index
+                global_index = challenges.index(challenge) + 1
+                console.print(f"  {global_index:2d}. [cyan]{challenge.name}[/cyan]")
+                console.print(f"      [dim]{challenge.description}[/dim]")
+                console.print(f"      🖥️  {challenge.recommended_hardware} | ⏱️  {challenge.expected_duration}")
+    
+    # Get user selection
+    while True:
+        try:
+            choice = Prompt.ask("\n[bold green]Select a challenge[/bold green] (enter number or name)")
+            
+            # Try to parse as number first
+            if choice.isdigit():
+                index = int(choice) - 1
+                if 0 <= index < len(challenges):
+                    return challenges[index]
+            
+            # Try to match by name
+            for challenge in challenges:
+                if challenge.name.lower() == choice.lower():
+                    return challenge
+                    
+            console.print("[red]Invalid selection. Please try again.[/red]")
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Exiting...[/yellow]")
+            sys.exit(0)
 
 def get_config_settings(is_fast_mode: bool) -> Dict[str, Any]:
     """Get configuration settings based on mode."""
@@ -284,10 +342,10 @@ def wait_for_user(interactive: bool = False):
         except EOFError:
             pass  # Continue if input is not available
 
-def run_baseline_evaluation(study_name: str, is_fast_mode: bool = False) -> Dict[str, Any]:
+def run_baseline_evaluation(study_name: str, data_config: DataConfig, is_fast_mode: bool = False) -> Dict[str, Any]:
     """Run a baseline evaluation of HRM vs HREM."""
     display_iteration_header("🏁 Step 1: Establishing Baseline Performance", 
-                           "Running both models on the same synthetic task to establish baseline performance...")
+                           f"Running both models on {data_config.dataset} dataset to establish baseline performance...")
     
     config_settings = get_config_settings(is_fast_mode)
     
@@ -298,7 +356,7 @@ def run_baseline_evaluation(study_name: str, is_fast_mode: bool = False) -> Dict
             study_name=study_name,
             logger_callback=DemoLogger().log
         ),
-        data_config=DataConfig(dataset="synthetic", synthetic_task="copy"),
+        data_config=data_config,
         training_config=TrainingConfig(
             epochs=config_settings["baseline_epochs"], 
             eval_interval=config_settings["baseline_eval_interval"]
@@ -313,7 +371,19 @@ def run_baseline_evaluation(study_name: str, is_fast_mode: bool = False) -> Dict
         transient=True,
     ) as progress:
         progress.add_task(description="Running baseline evaluation...", total=None)
-        results = run_evaluation(config)
+        try:
+            results = run_evaluation(config)
+        except Exception as e:
+            # Handle dataset-related errors more gracefully
+            if "No such file or directory" in str(e) and "raw-data" in str(e):
+                console.print(f"[bold red]❌ Dataset not found![/bold red]")
+                console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
+                console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
+                console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
+                raise SystemExit(1)
+            else:
+                # Re-raise other exceptions
+                raise e
         
     elapsed_time = time.time() - start_time
     console.print(f"[dim]⏱️  Evaluation completed in {elapsed_time:.1f} seconds[/dim]")
@@ -356,10 +426,10 @@ def calculate_balanced_score(accuracy: float, num_params: int, target_params: in
     
     return accuracy_weight * accuracy + param_weight * param_score
 
-def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False) -> Tuple[HREMParams, Dict[str, Any]]:
+def run_hyperparameter_optimization(study_name: str, data_config: DataConfig, is_fast_mode: bool = False) -> Tuple[HREMParams, Dict[str, Any]]:
     """Run hyperparameter optimization for both HRM and HREM with competitive parameter counts."""
     display_iteration_header("🔍 Step 2: Guided Hyperparameter Optimization", 
-                           "Optimizing both HRM and HREM hyperparameters with real-time performance feedback...")
+                           f"Optimizing both HRM and HREM hyperparameters on {data_config.dataset} dataset with real-time performance feedback...")
     console.print("[dim]💡 Key advantage: Results are generated after each iteration![/dim]")
     console.print()
     
@@ -374,7 +444,7 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
             study_name=f"{study_name}_hrem",
             logger_callback=DemoLogger().log
         ),
-        data_config=DataConfig(dataset="synthetic", synthetic_task="copy"),
+        data_config=data_config,
         training_config=TrainingConfig(
             epochs=config_settings["opt_epochs"], 
             eval_interval=config_settings["opt_eval_interval"]
@@ -400,7 +470,19 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
         transient=True,
     ) as progress:
         progress.add_task(description="Running HREM hyperparameter optimization...", total=None)
-        hrem_result = run_optimization(hrem_config)
+        try:
+            hrem_result = run_optimization(hrem_config)
+        except Exception as e:
+            # Handle dataset-related errors more gracefully
+            if "No such file or directory" in str(e) and "raw-data" in str(e):
+                console.print(f"[bold red]❌ Dataset not found![/bold red]")
+                console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
+                console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
+                console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
+                raise SystemExit(1)
+            else:
+                # Re-raise other exceptions
+                raise e
     
     hrem_elapsed = time.time() - start_time
     console.print(f"[dim]⏱️  HREM optimization completed in {hrem_elapsed:.1f} seconds[/dim]")
@@ -416,7 +498,7 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
             study_name=f"{study_name}_hrm",
             logger_callback=DemoLogger().log
         ),
-        data_config=DataConfig(dataset="synthetic", synthetic_task="copy"),
+        data_config=data_config,
         training_config=TrainingConfig(
             epochs=config_settings["opt_epochs"], 
             eval_interval=config_settings["opt_eval_interval"]
@@ -446,7 +528,19 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
         transient=True,
     ) as progress:
         progress.add_task(description="Running HRM hyperparameter optimization...", total=None)
-        hrm_result = run_optimization(hrm_config)
+        try:
+            hrm_result = run_optimization(hrm_config)
+        except Exception as e:
+            # Handle dataset-related errors more gracefully
+            if "No such file or directory" in str(e) and "raw-data" in str(e):
+                console.print(f"[bold red]❌ Dataset not found![/bold red]")
+                console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
+                console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
+                console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
+                raise SystemExit(1)
+            else:
+                # Re-raise other exceptions
+                raise e
     
     hrm_elapsed = time.time() - hrm_start_time
     console.print(f"[dim]⏱️  HRM optimization completed in {hrm_elapsed:.1f} seconds[/dim]")
@@ -482,10 +576,10 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
         "hrm_score": 0.0  # For compatibility with existing code
     }
 
-def run_final_evaluation(optimized_params: HREMParams, hrm_config: Dict[str, Any], study_name: str, is_fast_mode: bool = False) -> Dict[str, Any]:
+def run_final_evaluation(optimized_params: HREMParams, hrm_config: Dict[str, Any], study_name: str, data_config: DataConfig, is_fast_mode: bool = False) -> Dict[str, Any]:
     """Run final evaluation with both optimized HRM and HREM."""
     display_iteration_header("🏆 Step 3: Final Performance Comparison", 
-                           "Running final comparison with optimized HRM and HREM parameters...")
+                           f"Running final comparison with optimized HRM and HREM parameters on {data_config.dataset} dataset...")
     
     config_settings = get_config_settings(is_fast_mode)
     
@@ -512,7 +606,7 @@ def run_final_evaluation(optimized_params: HREMParams, hrm_config: Dict[str, Any
             study_name=study_name,
             logger_callback=DemoLogger().log
         ),
-        data_config=DataConfig(dataset="synthetic", synthetic_task="copy"),
+        data_config=data_config,
         training_config=TrainingConfig(
             epochs=config_settings["final_epochs"], 
             eval_interval=config_settings["final_eval_interval"]
@@ -531,7 +625,19 @@ def run_final_evaluation(optimized_params: HREMParams, hrm_config: Dict[str, Any
         transient=True,
     ) as progress:
         progress.add_task(description="Running final evaluation...", total=None)
-        results = run_evaluation(config)
+        try:
+            results = run_evaluation(config)
+        except Exception as e:
+            # Handle dataset-related errors more gracefully
+            if "No such file or directory" in str(e) and "raw-data" in str(e):
+                console.print(f"[bold red]❌ Dataset not found![/bold red]")
+                console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
+                console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
+                console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
+                raise SystemExit(1)
+            else:
+                # Re-raise other exceptions
+                raise e
         
     elapsed_time = time.time() - start_time
     console.print(f"[dim]⏱️  Final evaluation completed in {elapsed_time:.1f} seconds[/dim]")
@@ -541,11 +647,28 @@ def run_final_evaluation(optimized_params: HREMParams, hrm_config: Dict[str, Any
 def main(is_fast_mode: bool = False, interactive: bool = False):
     """Run the HRM vs HREM demonstration in the console."""
     try:
+        # Display challenge selection menu
+        selected_challenge = display_challenge_menu()
+        
+        # Display challenge details
+        console.print(f"\n[bold]Selected Challenge:[/bold] [cyan]{selected_challenge.name}[/cyan]")
+        console.print(f"[dim]{selected_challenge.description}[/dim]")
+        console.print(f"💻 {selected_challenge.recommended_hardware} | ⏱️  {selected_challenge.expected_duration}")
+        console.print(f"📈 Difficulty: {selected_challenge.difficulty.value.capitalize()}")
+        
+        if interactive:
+            try:
+                input("\n[bold green]Press Enter to start the demonstration...[/bold green]")
+            except EOFError:
+                pass  # Continue if input is not available
+        
         # Header
         console.clear()
-        console.print(Panel("[bold blue]🚀 HRM vs HREM Demonstration[/bold blue]\n[italic]Complete end-to-end system showcasing real-time results generation[/italic]", expand=False))
+        console.print(Panel(f"[bold blue]🚀 HRM vs HREM Demonstration: {selected_challenge.name}[/bold blue]\n[italic]Complete end-to-end system showcasing real-time results generation[/italic]", expand=False))
         
         # Introduction
+        console.print(f"\n[bold]Challenge:[/bold] {selected_challenge.name}")
+        console.print(f"[dim]{selected_challenge.description}[/dim]")
         console.print("\n[bold]This demonstration showcases:[/bold]")
         console.print("• 📊 Baseline evaluation of HRM vs HREM models")
         console.print("• 🔍 Hyperparameter optimization with real-time feedback")
@@ -559,14 +682,8 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
         console.print("• Generates actionable results after each iteration")
         console.print("• Continuously improves based on real-time feedback")
         
-        if interactive:
-            try:
-                input("\n[bold green]Press Enter to start the demonstration...[/bold green]")
-            except EOFError:
-                pass  # Continue if input is not available
-        
         # Step 1: Baseline evaluation
-        baseline_results = run_baseline_evaluation("cli_demo_baseline", is_fast_mode)
+        baseline_results = run_baseline_evaluation("cli_demo_baseline", selected_challenge.data_config, is_fast_mode)
         display_model_detailed_stats("📊 Baseline Results", baseline_results)
         
         # Show current leader
@@ -586,7 +703,7 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
                 pass  # Continue if input is not available
         
         # Step 2: Hyperparameter optimization
-        hrem_params, optimization_details = run_hyperparameter_optimization("cli_demo_optimization", is_fast_mode)
+        hrem_params, optimization_details = run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config, is_fast_mode)
         display_hrem_params("⚙️ Optimized HREM Parameters", hrem_params)
         
         hrm_params = optimization_details.get("hrm_params", {})
@@ -609,7 +726,7 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
                 pass  # Continue if input is not available
         
         # Step 3: Final comparison
-        final_results = run_final_evaluation(hrem_params, hrm_params, "cli_demo_final", is_fast_mode)
+        final_results = run_final_evaluation(hrem_params, hrm_params, "cli_demo_final", selected_challenge.data_config, is_fast_mode)
         display_model_detailed_stats("📊 Final Results", final_results)
         
         # Show improvement

@@ -24,16 +24,24 @@ def _run_dataset_builder(command: list[str], logger_callback: callable):
             bufsize=1,
             universal_newlines=True,
         )
+        output_lines = []
         for line in process.stdout:
             logger_callback(line.strip())
+            output_lines.append(line.strip())
         process.wait()
         if process.returncode != 0:
+            # Check if this is a missing dataset error
+            output_text = "\n".join(output_lines)
+            if "No such file or directory" in output_text and "raw-data" in output_text:
+                logger_callback(f"[bold red]❌ Dataset not found![/bold red]")
+                logger_callback(f"[yellow]This dataset requires raw data files that are not included in this repository.[/yellow]")
+                logger_callback("[dim]Please download the required dataset files or try a different challenge.[/dim]")
+                logger_callback("[dim]See the README for dataset preparation instructions.[/dim]")
             raise subprocess.CalledProcessError(process.returncode, command)
     except FileNotFoundError as e:
         logger_callback(f"[bold red]Error: {e}[/bold red]")
         raise
     except subprocess.CalledProcessError as e:
-        logger_callback(f"[bold red]Dataset builder failed with exit code {e.returncode}[/bold red]")
         raise
 
 

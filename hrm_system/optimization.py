@@ -26,7 +26,16 @@ def _objective(
     with open(search_space_path, 'r') as f:
         search_space = yaml.safe_load(f)
 
-    for name, definition in search_space["hrem_params"].items():
+    # Determine which parameter section to use based on the model being optimized
+    param_section = "hrem_params"
+    if "hrm" in opt_config.model_to_optimize.name.lower() or "hrm" in opt_config.model_to_optimize.algorithm_class.lower():
+        param_section = "hrm_params"
+    
+    # Fallback to hrem_params if the specific section doesn't exist
+    if param_section not in search_space:
+        param_section = "hrem_params"
+
+    for name, definition in search_space[param_section].items():
         param_type = definition['type']
         if run_config.smoke_test and f"smoke_{param_type}" in definition:
             param_type = f"smoke_{definition['type']}"
@@ -41,7 +50,13 @@ def _objective(
 
     # 2. Create model config for this trial
     trial_model_config = opt_config.model_to_optimize.model_copy(deep=True)
-    trial_model_config.hrem_params = HREMParams(**params)
+    
+    # Set parameters based on model type
+    if "hrem" in opt_config.model_to_optimize.name.lower() or "hrem" in opt_config.model_to_optimize.algorithm_class.lower():
+        trial_model_config.hrem_params = HREMParams(**params)
+    else:
+        # For HRM, we'll pass parameters as arch_overrides
+        trial_model_config.arch_overrides = params
 
     # 3. Run the model
     try:
@@ -123,9 +138,15 @@ def run_optimization(config: ExperimentConfig) -> Dict[str, Any]:
     ]
     final_metrics[opt_config.baseline_model.name] = aggregate_metrics(baseline_metrics_list)
 
-    # Run best HREM model
+    # Run best model (could be HRM or HREM)
     best_model_config = opt_config.model_to_optimize.model_copy(deep=True)
-    best_model_config.hrem_params = HREMParams(**best_trial.params)
+    
+    # Set parameters based on model type
+    if "hrem" in opt_config.model_to_optimize.name.lower() or "hrem" in opt_config.model_to_optimize.algorithm_class.lower():
+        best_model_config.hrem_params = HREMParams(**best_trial.params)
+    else:
+        # For HRM, we'll pass parameters as arch_overrides
+        best_model_config.arch_overrides = best_trial.params
 
     best_hrem_metrics_list = [
         run_single_model(

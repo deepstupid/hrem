@@ -316,7 +316,7 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
     config_settings = get_config_settings(is_fast_mode)
     
     # First, optimize HREM
-    console.print("[bold blue]Optimizing HREM model...[/bold blue]")
+    console.print("[bold blue]Running HREM hyperparameter optimization...[/bold blue]")
     hrem_config = ExperimentConfig(
         mode="optimize",
         run_config=RunConfig(
@@ -333,7 +333,13 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
             n_trials=config_settings["opt_trials"],
             n_jobs=1,
             storage="sqlite:///experiments/optuna_demo_cli.db",
-            n_final_runs=1
+            n_final_runs=1,
+            # Specify that we're optimizing HREM
+            model_to_optimize=ModelConfig(
+                name="HREM_best",
+                algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm",
+                base_arch_config="hrem_v1"
+            )
         )
     )
     
@@ -349,89 +355,53 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
     hrem_elapsed = time.time() - start_time
     console.print(f"[dim]⏱️  HREM optimization completed in {hrem_elapsed:.1f} seconds[/dim]")
     
-    # Then, optimize HRM with a similar parameter budget
-    console.print("[bold blue]Optimizing HRM model with competitive parameter count...[/bold blue]")
+    # Then, optimize HRM
+    console.print("[bold blue]Running HRM hyperparameter optimization...[/bold blue]")
     
-    # Get HREM's parameter count from the optimization results
-    hrem_params_count = 0
-    if hrem_result and "results" in hrem_result and "HREM_best" in hrem_result["results"]:
-        hrem_params_raw = hrem_result["results"]["HREM_best"].get("num_params", 0)
-        try:
-            hrem_params_count = int(hrem_params_raw)
-        except (ValueError, TypeError):
-            hrem_params_count = 0
-    
-    # For HRM optimization, we'll run a simple evaluation with different configurations
-    # to find a competitive parameter count
-    best_hrm_config = None
-    best_hrm_score = -float('inf')
-    
-    # Try different HRM configurations to match HREM's parameter count
-    hrm_variants = [
-        {"hidden_size": 64, "memory_size": 32},
-        {"hidden_size": 128, "memory_size": 64},
-        {"hidden_size": 256, "memory_size": 128},
-        {"hidden_size": 512, "memory_size": 256},
-    ]
-    
-    for i, variant in enumerate(hrm_variants):
-        console.print(f"[dim]Testing HRM variant {i+1}/{len(hrm_variants)}...[/dim]")
-        hrm_eval_config = ExperimentConfig(
-            mode="evaluate",
-            run_config=RunConfig(
-                smoke_test=True,
-                study_name=f"{study_name}_hrm_variant_{i}",
-                logger_callback=DemoLogger().log
+    # Create HRM optimization config
+    hrm_config = ExperimentConfig(
+        mode="optimize",
+        run_config=RunConfig(
+            smoke_test=True,
+            study_name=f"{study_name}_hrm",
+            logger_callback=DemoLogger().log
+        ),
+        data_config=DataConfig(dataset="synthetic", synthetic_task="copy"),
+        training_config=TrainingConfig(
+            epochs=config_settings["opt_epochs"], 
+            eval_interval=config_settings["opt_eval_interval"]
+        ),
+        optimization_config=OptimizationConfig(
+            n_trials=config_settings["opt_trials"],
+            n_jobs=1,
+            storage="sqlite:///experiments/optuna_demo_cli.db",
+            n_final_runs=1,
+            # Specify that we're optimizing HRM
+            model_to_optimize=ModelConfig(
+                name="HRM_best",
+                algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
+                base_arch_config="hrm_v1"
             ),
-            data_config=DataConfig(dataset="synthetic", synthetic_task="copy"),
-            training_config=TrainingConfig(
-                epochs=config_settings["opt_epochs"], 
-                eval_interval=config_settings["opt_eval_interval"]
-            ),
-            evaluation_config=EvaluationConfig(
-                n_runs=1,
-                model_a=ModelConfig(
-                    name="HRM",
-                    algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
-                    base_arch_config="hrm_v1",
-                    arch_overrides=variant
-                )
-            )
+            # Define search space for HRM parameters
+            search_space={
+                "path": "config/hrm_search_space.yaml"
+            }
         )
-        
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-        ) as progress:
-            progress.add_task(description=f"Testing HRM variant {i+1}...", total=None)
-            hrm_eval_result = run_evaluation(hrm_eval_config)
-        
-        if hrm_eval_result and "results" in hrm_eval_result and "HRM" in hrm_eval_result["results"]:
-            hrm_metrics = hrm_eval_result["results"]["HRM"]
-            hrm_accuracy = hrm_metrics.get("all/accuracy", 0)
-            hrm_params = hrm_metrics.get("num_params", 0)
-            
-            # Calculate balanced score
-            # Convert to numbers if they're strings
-            try:
-                hrm_accuracy = float(hrm_accuracy) if isinstance(hrm_accuracy, str) else hrm_accuracy
-                hrm_params = int(float(hrm_params)) if isinstance(hrm_params, (str, float)) else int(hrm_params)
-            except (ValueError, TypeError):
-                hrm_accuracy = 0.0
-                hrm_params = 0
-            
-            # Calculate balanced score
-            hrm_score = calculate_balanced_score(hrm_accuracy, hrm_params, hrem_params_count)
-            
-            if hrm_score > best_hrm_score:
-                best_hrm_score = hrm_score
-                best_hrm_config = variant
+    )
     
-    elapsed_time = time.time() - start_time
-    console.print(f"[dim]⏱️  HRM optimization completed in {elapsed_time:.1f} seconds[/dim]")
+    hrm_start_time = time.time()
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as progress:
+        progress.add_task(description="Running HRM hyperparameter optimization...", total=None)
+        hrm_result = run_optimization(hrm_config)
     
-    # Return the best parameters for both models
+    hrm_elapsed = time.time() - hrm_start_time
+    console.print(f"[dim]⏱️  HRM optimization completed in {hrm_elapsed:.1f} seconds[/dim]")
+    
+    # Get best parameters for both models
     hrem_params = None
     if hrem_result and "best_params" in hrem_result:
         hrem_params = HREMParams(**hrem_result["best_params"])
@@ -448,10 +418,18 @@ def run_hyperparameter_optimization(study_name: str, is_fast_mode: bool = False)
             hidden_size=256
         )
     
+    hrm_params = None
+    if hrm_result and "best_params" in hrm_result:
+        hrm_params = hrm_result["best_params"]
+    
+    elapsed_time = time.time() - start_time
+    console.print(f"[dim]⏱️  Total optimization completed in {elapsed_time:.1f} seconds[/dim]")
+    
     return hrem_params, {
         "hrem_result": hrem_result,
-        "hrm_config": best_hrm_config,
-        "hrm_score": best_hrm_score
+        "hrm_result": hrm_result,
+        "hrm_params": hrm_params,
+        "hrm_score": 0.0  # For compatibility with existing code
     }
 
 def run_final_evaluation(optimized_params: HREMParams, hrm_config: Dict[str, Any], study_name: str, is_fast_mode: bool = False) -> Dict[str, Any]:
@@ -469,6 +447,7 @@ def run_final_evaluation(optimized_params: HREMParams, hrm_config: Dict[str, Any
         hrem_params=optimized_params
     )
     
+    # For HRM, we pass parameters as arch_overrides
     hrm_model_config = ModelConfig(
         name="HRM_best",
         algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
@@ -560,10 +539,12 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
         hrem_params, optimization_details = run_hyperparameter_optimization("cli_demo_optimization", is_fast_mode)
         display_hrem_params("⚙️ Optimized HREM Parameters", hrem_params)
         
-        hrm_config = optimization_details.get("hrm_config", {})
+        hrm_params = optimization_details.get("hrm_params", {})
         console.print("\n[bold blue]HRM Optimization Results:[/bold blue]")
-        console.print(f"  Best HRM config: {hrm_config}")
-        console.print(f"  HRM balanced score: {optimization_details.get('hrm_score', 0):.4f}")
+        if hrm_params:
+            console.print(f"  Best HRM params: {hrm_params}")
+        else:
+            console.print("  No HRM parameters found")
         
         if interactive:
             try:
@@ -572,7 +553,7 @@ def main(is_fast_mode: bool = False, interactive: bool = False):
                 pass  # Continue if input is not available
         
         # Step 3: Final comparison
-        final_results = run_final_evaluation(hrem_params, hrm_config, "cli_demo_final", is_fast_mode)
+        final_results = run_final_evaluation(hrem_params, hrm_params, "cli_demo_final", is_fast_mode)
         display_model_detailed_stats("📊 Final Results", final_results)
         
         # Show improvement

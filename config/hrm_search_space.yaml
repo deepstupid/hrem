@@ -1,0 +1,33 @@
+hrm_params:
+  H_cycles:
+    type: int
+    low: 1
+    high: 4
+    smoke_high: 2
+  L_cycles:
+    type: int
+    low: 1
+    high: 4
+    smoke_high: 2
+  H_layers:
+    type: int
+    low: 1
+    high: 4
+    smoke_high: 2
+  L_layers:
+    type: int
+    low: 1
+    high: 4
+    smoke_high: 2
+  hidden_size:
+    type: categorical
+    choices: [128, 256, 512]
+    smoke_choices: [64, 128]
+  num_heads:
+    type: categorical
+    choices: [4, 8, 16]
+    smoke_choices: [2, 4]
+  expansion:
+    type: categorical
+    choices: [2, 4, 8]
+    smoke_choices: [2, 4]

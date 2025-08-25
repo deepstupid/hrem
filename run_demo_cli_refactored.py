@@ -778,10 +778,11 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
                 pass  # Continue if input is not available
         
         # Step 2: Hyperparameter optimization
-        # Only optimize HRM and HREM, keep EnhancedHREM as baseline for comparison
+        # Optimize all models
         models_to_optimize = [
             ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"),
-            ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1")
+            ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1"),
+            ModelConfig(name="EnhancedHREM", algorithm_class="hrm_system.algorithms.enhanced_hrem.EnhancedHREMAlgorithm", base_arch_config="enhanced_hrem_v1")
         ]
         
         optimization_results = runner.run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config, models_to_optimize)

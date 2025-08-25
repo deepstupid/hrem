@@ -185,13 +185,25 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
             z_L=torch.where(reset_flag.view(-1, 1, 1), self.L_init, carry.z_L),
         )
 
-    def forward(self, carry: HierarchicalReasoningModel_ACTV1InnerCarry, batch: Dict[str, torch.Tensor], memory_readout: Optional[torch.Tensor] = None) -> Tuple[HierarchicalReasoningModel_ACTV1InnerCarry, torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(
+        self,
+        carry: HierarchicalReasoningModel_ACTV1InnerCarry,
+        batch: Dict[str, torch.Tensor],
+        memory_readout: Optional[torch.Tensor] = None,
+    ) -> Tuple[
+        HierarchicalReasoningModel_ACTV1InnerCarry,
+        torch.Tensor,
+        Tuple[torch.Tensor, torch.Tensor],
+        Tuple[torch.Tensor, torch.Tensor],
+    ]:
         seq_info = dict(
             cos_sin=self.rotary_emb() if hasattr(self, "rotary_emb") else None,
         )
 
         # Input encoding
-        input_embeddings = self._input_embeddings(batch["inputs"], batch["puzzle_identifiers"])
+        input_embeddings = self._input_embeddings(
+            batch["inputs"], batch["puzzle_identifiers"]
+        )
 
         if memory_readout is not None:
             input_embeddings = input_embeddings + memory_readout
@@ -218,13 +230,26 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
             z_H = self.H_level(z_H, z_L, **seq_info)
 
         # LM Outputs
-        new_carry = HierarchicalReasoningModel_ACTV1InnerCarry(z_H=z_H.detach(), z_L=z_L.detach())  # New carry no grad
-        output = self.lm_head(z_H)[:, self.puzzle_emb_len:]
+        output = self.lm_head(z_H)[:, self.puzzle_emb_len :]
 
-        # Q head
+        # Q head for current state
         q_logits = self.q_head(z_H[:, 0]).to(torch.float32)
-        
-        return new_carry, output, (q_logits[..., 0], q_logits[..., 1])
+
+        # Create new carry with detached state
+        new_carry = HierarchicalReasoningModel_ACTV1InnerCarry(
+            z_H=z_H.detach(), z_L=z_L.detach()
+        )
+
+        # Q head for NEXT state (no gradients)
+        with torch.no_grad():
+            next_q_logits = self.q_head(new_carry.z_H[:, 0]).to(torch.float32)
+
+        return (
+            new_carry,
+            output,
+            (q_logits[..., 0], q_logits[..., 1]),
+            (next_q_logits[..., 0], next_q_logits[..., 1]),
+        )
 
 
 class HierarchicalReasoningModel_ACTV1(nn.Module):
@@ -251,28 +276,43 @@ class HierarchicalReasoningModel_ACTV1(nn.Module):
             current_data={k: torch.empty_like(v) for k, v in batch.items()}
         )
         
-    def forward(self, carry: HierarchicalReasoningModel_ACTV1Carry, batch: Dict[str, torch.Tensor], memory_readout: Optional[torch.Tensor] = None) -> Tuple[HierarchicalReasoningModel_ACTV1Carry, Dict[str, torch.Tensor]]:
+    def forward(
+        self,
+        carry: HierarchicalReasoningModel_ACTV1Carry,
+        batch: Dict[str, torch.Tensor],
+        memory_readout: Optional[torch.Tensor] = None,
+    ) -> Tuple[HierarchicalReasoningModel_ACTV1Carry, Dict[str, torch.Tensor]]:
         # Update data, carry (removing halted sequences)
         new_inner_carry = self.inner.reset_carry(carry.halted, carry.inner_carry)
-        
+
         new_steps = torch.where(carry.halted, 0, carry.steps)
 
-        new_current_data = {k: torch.where(carry.halted.view((-1, ) + (1, ) * (batch[k].ndim - 1)), batch[k], v) for k, v in carry.current_data.items()}
+        new_current_data = {
+            k: torch.where(
+                carry.halted.view((-1,) + (1,) * (batch[k].ndim - 1)), batch[k], v
+            )
+            for k, v in carry.current_data.items()
+        }
 
         # Forward inner model
-        new_inner_carry, logits, (q_halt_logits, q_continue_logits) = self.inner(new_inner_carry, new_current_data, memory_readout=memory_readout)
+        (
+            new_inner_carry,
+            logits,
+            (q_halt_logits, q_continue_logits),
+            (next_q_halt_logits, next_q_continue_logits),
+        ) = self.inner(new_inner_carry, new_current_data, memory_readout=memory_readout)
 
         outputs = {
             "logits": logits,
             "q_halt_logits": q_halt_logits,
-            "q_continue_logits": q_continue_logits
+            "q_continue_logits": q_continue_logits,
         }
-        
+
         with torch.no_grad():
             # Step
             new_steps = new_steps + 1
             is_last_step = new_steps >= self.config.halt_max_steps
-            
+
             halted = is_last_step
 
             # if training, and ACT is enabled
@@ -282,7 +322,11 @@ class HierarchicalReasoningModel_ACTV1(nn.Module):
                 halted = halted | (q_halt_logits > q_continue_logits)
 
                 # Exploration
-                min_halt_steps = (torch.rand_like(q_halt_logits) < self.config.halt_exploration_prob) * torch.randint_like(new_steps, low=2, high=self.config.halt_max_steps + 1)
+                min_halt_steps = (
+                    torch.rand_like(q_halt_logits) < self.config.halt_exploration_prob
+                ) * torch.randint_like(
+                    new_steps, low=2, high=self.config.halt_max_steps + 1
+                )
 
                 halted = halted & (new_steps >= min_halt_steps)
 
@@ -290,8 +334,17 @@ class HierarchicalReasoningModel_ACTV1(nn.Module):
                 # NOTE: No replay buffer and target networks for computing target Q-value.
                 # As batch_size is large, there're many parallel envs.
                 # Similar concept as PQN https://arxiv.org/abs/2407.04811
-                next_q_halt_logits, next_q_continue_logits = self.inner(new_inner_carry, new_current_data, memory_readout=memory_readout)[-1]
-                
-                outputs["target_q_continue"] = torch.sigmoid(torch.where(is_last_step, next_q_halt_logits, torch.maximum(next_q_halt_logits, next_q_continue_logits)))
+                outputs["target_q_continue"] = torch.sigmoid(
+                    torch.where(
+                        is_last_step,
+                        next_q_halt_logits,
+                        torch.maximum(next_q_halt_logits, next_q_continue_logits),
+                    )
+                )
 
-        return HierarchicalReasoningModel_ACTV1Carry(new_inner_carry, new_steps, halted, new_current_data), outputs
+        return (
+            HierarchicalReasoningModel_ACTV1Carry(
+                new_inner_carry, new_steps, halted, new_current_data
+            ),
+            outputs,
+        )

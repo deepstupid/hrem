@@ -205,6 +205,7 @@ logs/: A directory containing the detailed logs for each trial, useful for debug
 
  - Small-sample learning typically exhibits accuracy variance of around ±2 points.
  - For Sudoku-Extreme (1,000-example dataset), late-stage overfitting may cause numerical instability during training and Q-learning. It is advisable to use early stopping once the training accuracy approaches 100%.
+ - The Q-learning mechanism in `models/hrm/hrm_act_v1.py` has been optimized to eliminate a redundant forward pass during training, significantly improving training performance.
 
 ## Citation 📜
 

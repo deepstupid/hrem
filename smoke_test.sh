@@ -17,19 +17,17 @@ DATA_PATH="data/synthetic-smoke"
 echo "Training HRM..."
 HRM_CHECKPOINT_PATH="checkpoints/smoke_test/HRM"
 HRM_LOG_PATH="smoke_test_hrm_metrics.json"
-python pretrain.py \
-    data_path=$DATA_PATH \
-    arch=hrm_v1 \
-    +arch.forward_dtype=float32 \
-    arch.hidden_size=16 \
-    arch.H_layers=1 \
-    arch.L_layers=1 \
-    arch.puzzle_emb_ndim=16 \
-    global_batch_size=1 \
-    +checkpoint_path=$HRM_CHECKPOINT_PATH \
-    +log_path=$HRM_LOG_PATH \
-    +smoke_test=true \
-    epochs=1 \
-    eval_interval=1
+
+# The new way of running the smoke test, using the refactored runner.
+python run_smoke_test.py \
+    --data_path $DATA_PATH \
+    --arch hrm_v1 \
+    --global_batch_size 1 \
+    --epochs 1 \
+    --eval_interval 1 \
+    --checkpoint_path $HRM_CHECKPOINT_PATH \
+    --log_path $HRM_LOG_PATH \
+    --smoke_test \
+    --arch_overrides '{"forward_dtype": "float32", "hidden_size": 16, "H_layers": 1, "L_layers": 1, "puzzle_emb_ndim": 16}'
 
 echo "Smoke test completed successfully."

@@ -66,7 +66,8 @@ def generate_evaluation_report(
     # Add model parameters to the report
     models_in_report = [eval_config.model_a, eval_config.model_b]
     for model_config in models_in_report:
-        if model_config.type == "HREM" and model_config.hrem_params:
+        # A simple check to see if this is an HREM-like model
+        if "hrem" in model_config.algorithm_class.lower() and model_config.hrem_params:
             report_lines.append(f"\n## {model_config.name} Parameters")
             report_lines.append("| Parameter | Value |")
             report_lines.append("|---|---|")

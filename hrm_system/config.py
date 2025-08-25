@@ -29,28 +29,35 @@ class HREMParams(BaseModel):
 class ModelConfig(BaseModel):
     """Configuration for the model to be trained or evaluated."""
     name: str = "HREM"
-    # 'HRM' is the baseline, 'HREM' is the version with external memory.
-    type: Literal["HRM", "HREM"] = "HREM"
+    algorithm_class: str = Field("hrm_system.algorithms.hrem.HREMAlgorithm", description="The full import path to the algorithm class.")
     base_arch_config: str = Field("hrem_v1", description="Base architecture config file name (e.g., 'hrem_v1').")
     hrem_params: Optional[HREMParams] = Field(default_factory=HREMParams, description="HREM-specific hyperparameters.")
+    arch_overrides: Dict[str, Any] = Field(default_factory=dict, description="Architecture overrides from the command line.")
 
 class TrainingConfig(BaseModel):
-    """Configuration for the training process, passed to pretrain.py."""
+    """Configuration for the training process."""
     epochs: int = 20000
     eval_interval: int = 2000
     global_batch_size: int = 384
     lr: float = 1e-4
+    lr_min_ratio: float = 0.1
+    lr_warmup_steps: int = 2000
     puzzle_emb_lr: float = 1e-4
     weight_decay: float = 1.0
     puzzle_emb_weight_decay: float = 1.0
-    # Add other relevant training params from pretrain.py as needed
+    beta1: float = 0.9
+    beta2: float = 0.95
+    seed: int = 0
+    checkpoint_every_eval: bool = False
+    eval_save_outputs: List[str] = Field(default_factory=list)
+    smoke_test: bool = False
 
 class EvaluationConfig(BaseModel):
     """Configuration for the evaluation mode."""
     n_runs: int = Field(1, description="Number of runs for statistical significance.")
     # The evaluation mode compares two models.
-    model_a: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HRM", type="HRM"), description="The first model to compare (baseline).")
-    model_b: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HREM", type="HREM"), description="The second model to compare.")
+    model_a: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"), description="The first model to compare (baseline).")
+    model_b: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1"), description="The second model to compare.")
 
 class OptimizationConfig(BaseModel):
     """Configuration for the hyperparameter optimization mode."""
@@ -59,8 +66,8 @@ class OptimizationConfig(BaseModel):
     storage: str = Field("sqlite:///experiments/optuna_hrem.db", description="Optuna storage URL.")
     search_space: Dict[str, Any] = Field(default_factory=dict, description="Hyperparameter search space for Optuna.")
     n_final_runs: int = Field(1, description="Number of final comparison runs for statistical significance.")
-    baseline_model: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HRM", type="HRM"), description="The baseline model to compare against.")
-    model_to_optimize: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HREM_best", type="HREM"), description="The model to be optimized.")
+    baseline_model: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"), description="The baseline model to compare against.")
+    model_to_optimize: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HREM_best", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1"), description="The model to be optimized.")
 
 
 class RunConfig(BaseModel):

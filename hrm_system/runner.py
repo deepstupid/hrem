@@ -1,16 +1,19 @@
-import subprocess
-import sys
+import importlib
 import json
 import os
+import sys
 from pathlib import Path
+
 import pandas as pd
 import yaml
+import subprocess
 
 from .config import RunConfig, DataConfig, ModelConfig, TrainingConfig
 
-def _run_command(command: list[str], logger_callback: callable, error_message: str):
+def _run_dataset_builder(command: list[str], logger_callback: callable):
     """
-    Executes a command, streams its output to the logger, and handles potential errors.
+    Executes the dataset builder script.
+    This is kept separate as it's a one-time setup process per dataset.
     """
     try:
         process = subprocess.Popen(
@@ -23,20 +26,14 @@ def _run_command(command: list[str], logger_callback: callable, error_message: s
         )
         for line in process.stdout:
             logger_callback(line.strip())
-
         process.wait()
-
         if process.returncode != 0:
-            error_details = f"Command exited with non-zero code {process.returncode}."
-            logger_callback(f"[bold red]{error_message}[/bold red]")
-            logger_callback(error_details)
             raise subprocess.CalledProcessError(process.returncode, command)
-
     except FileNotFoundError as e:
         logger_callback(f"[bold red]Error: {e}[/bold red]")
         raise
     except subprocess.CalledProcessError as e:
-        # The error is already logged, just re-raise
+        logger_callback(f"[bold red]Dataset builder failed with exit code {e.returncode}[/bold red]")
         raise
 
 
@@ -48,8 +45,7 @@ def run_single_model(
     run_identifier: str = "run_0"
 ):
     """
-    Runs a single model training and evaluation.
-    This is a refactored version of the original `run_model` function.
+    Runs a single model training and evaluation using the new pluggable algorithm architecture.
     """
     logger = run_config.logger_callback or print
 
@@ -57,6 +53,10 @@ def run_single_model(
     if run_config.smoke_test:
         data_dir = f"data/{data_config.dataset}-smoke"
         num_aug = 0
+        training_config.smoke_test = True
+        training_config.epochs = 1
+        training_config.eval_interval = 1
+        # Note: Smoke test overrides for model params are now handled inside the algorithm.
     else:
         data_dir = f"data/{data_config.dataset}-full"
         num_aug = data_config.num_aug
@@ -77,68 +77,39 @@ def run_single_model(
             ])
 
         logger(f"Building {data_config.dataset} dataset...")
-        _run_command(build_command, logger, "Error running dataset builder:")
+        _run_dataset_builder(build_command, logger)
         logger(f"Dataset built successfully at {data_dir}")
 
-    # 2. Construct the command for pretrain.py
-    run_name = f"{model_config.name}_{data_config.dataset}_{run_identifier}"
-    log_path = Path(run_config.output_dir) / f"{run_config.study_name}" / f"tmp_results_{run_name}.json"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Base command
-    command = [
-        "-m", "torch.distributed.run", "--nproc-per-node", "1",
-        "--rdzv-backend", "c10d", "--rdzv-endpoint", "localhost:0",
-        "pretrain.py",
-        f"data_path={data_dir}",
-        f"arch={model_config.base_arch_config}",
-        f"+log_path={str(log_path)}",
-        f"+project_name={run_config.project_name}",
-        f"+run_name={run_name}",
-    ]
-
-    # Adjust config for smoke test
-    if run_config.smoke_test:
-        training_config.epochs = 1
-        training_config.eval_interval = 1
-        training_config.global_batch_size = 1
-
-    # Add training params
-    command.extend([
-        f"epochs={training_config.epochs}",
-        f"eval_interval={training_config.eval_interval}",
-        f"global_batch_size={training_config.global_batch_size}",
-    ])
-
-    # Add model params
-    hparam_args = []
-    if model_config.type == "HREM" and model_config.hrem_params:
-        # Load the base config to check for existing keys
-        base_model_config_path = f"config/arch/{model_config.base_arch_config}.yaml"
-        with open(base_model_config_path, 'r') as f:
-            base_model_config = yaml.safe_load(f)
-
-        for key, value in model_config.hrem_params.model_dump().items():
-            if key not in base_model_config:
-                hparam_args.append(f"+arch.{key}={value}")
-            else:
-                hparam_args.append(f"arch.{key}={value}")
-
-    command.extend(hparam_args)
-
-    # Add smoke test params if applicable
-    if run_config.smoke_test:
-        command.extend([
-            "+smoke_test=True", "arch.puzzle_emb_ndim=16", "arch.num_heads=1",
-            "arch.expansion=1.0", "checkpoint_every_eval=True"
-        ])
-
-    # 3. Run the command
+    # 2. Instantiate and run the algorithm
     logger(f"Running model: {model_config.name} ({run_identifier})...")
-    logger(f"Command: {' '.join(command)}")
-    _run_command(command, logger, f"Error running pretrain.py for {model_config.name}")
 
-    # 4. Parse and return results
+    # Dynamically import the algorithm class
+    try:
+        module_path, class_name = model_config.algorithm_class.rsplit('.', 1)
+        module = importlib.import_module(module_path)
+        algorithm_class = getattr(module, class_name)
+    except (ImportError, AttributeError) as e:
+        logger(f"[bold red]Error: Could not import algorithm class '{model_config.algorithm_class}'. {e}[/bold red]")
+        raise
+
+    # Instantiate the algorithm
+    algorithm = algorithm_class(model_config, training_config)
+
+    # Prepare paths
+    run_name = f"{model_config.name}_{data_config.dataset}_{run_identifier}"
+    output_dir = Path(run_config.output_dir) / f"{run_config.study_name}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Run training
+    algorithm.train(
+        data_path=data_dir,
+        logger_callback=logger,
+        checkpoint_path=str(output_dir),
+        run_name=run_name
+    )
+
+    # 3. Parse and return results from the log file
+    log_path = output_dir / f"tmp_results_{run_name}.json"
     if not log_path.exists():
         logger(f"[bold yellow]Warning: Log file {log_path} not found.[/bold yellow]")
         return {}
@@ -154,14 +125,13 @@ def run_single_model(
         logger(f"[bold yellow]Warning: Log file {log_path} is empty.[/bold yellow]")
         return {}
 
+    # Find the best result based on the lowest validation loss
     best_entry = min(data, key=lambda x: x.get('all', {}).get('lm_loss', float('inf')), default=None)
     if best_entry is None:
         best_entry = data[-1] if data else {}
 
+    # Normalize the nested dictionary into a flat dictionary
     final_metrics = pd.json_normalize(best_entry, sep='/').to_dict(orient='records')[0] if best_entry else {}
-
-    # Clean up temporary log file
-    # log_path.unlink()
 
     logger(f"Finished running model: {model_config.name}. Final loss: {final_metrics.get('all/lm_loss', 'N/A')}")
     return final_metrics

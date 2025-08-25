@@ -1,29 +1,18 @@
 [
     {
         "step": 0,
-        "num_params": 27010
+        "num_params": 101545
     },
     {
         "step": 1,
         "train/accuracy": 0.0,
         "train/count": 0.0,
         "train/exact_accuracy": 0.0,
-        "train/lm_loss": 2.3258171174983966,
+        "train/lm_loss": 3.193933052241251,
         "train/q_continue_loss": 0.04017925262451172,
         "train/q_halt_accuracy": 0.0,
         "train/q_halt_loss": 0.006715297698974609,
         "train/steps": 0.0,
         "train/lr": 5.0000000000000004e-08
-    },
-    {
-        "step": 10,
-        "all": {
-            "accuracy": 0.05000000074505806,
-            "exact_accuracy": 0.0,
-            "lm_loss": 2.6235692501068115,
-            "q_halt_accuracy": 1.0,
-            "q_halt_loss": 0.006715297698974609,
-            "steps": 16.0
-        }
     }
 ]

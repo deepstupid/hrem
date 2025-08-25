@@ -158,18 +158,65 @@ OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/sudoku-
 
 *Runtime:* ~2 hours
 
-## Evaluation
+## Model Evaluation and Optimization
 
-Evaluate your trained models:
+Beyond training, this repository provides powerful tools for model evaluation, comparison, and hyperparameter optimization. These tools are crucial for robustly assessing model performance and for exploring the capabilities of the HREM architecture.
 
-* Check `eval/exact_accuracy` in W&B.
-* For ARC-AGI, follow these additional steps:
+### Standard Evaluation
 
-```bash
-OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 evaluate.py checkpoint=<CHECKPOINT_PATH>
-```
+There are two primary ways to evaluate models:
 
-* Then use the provided `arc_eval.ipynb` notebook to finalize and inspect your results.
+1.  **Evaluate a Single Checkpoint:**
+    To evaluate a specific, pre-trained model checkpoint, use the `evaluate.py` script. This is useful for re-evaluating a model or for analyzing its outputs in detail.
+
+    ```bash
+    OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 evaluate.py checkpoint=<CHECKPOINT_PATH>
+    ```
+
+    You can then use the `arc_eval.ipynb` notebook to further analyze the results, especially for the ARC benchmark.
+
+2.  **Run a Baseline Comparison:**
+    To run a side-by-side comparison of the standard `HRM` model and the `HREM` model with its default hyperparameters, use the `run_evaluation.py` script. This script will train both models from scratch on a specified dataset and generate a `comparison_report.md` file with the results.
+
+    ```bash
+    python run_evaluation.py --dataset <DATASET_NAME>
+    ```
+    *   `--dataset`: The dataset to use (e.g., `arc`, `sudoku`, `maze`).
+    *   `--smoke-test`: Run a quick test on a small synthetic dataset.
+
+### Hyperparameter Optimization with Optuna
+
+For more advanced analysis, this project includes a script to perform hyperparameter optimization for the `HREM` model using `optuna`. This script, `optimize_eval.py`, not only finds the best hyperparameters for HREM on a given task but also runs a statistically robust comparison against the baseline HRM model.
+
+**Key Features:**
+
+*   **Automated Search:** Automatically searches for the best HREM hyperparameters (e.g., memory size, number of layers, etc.).
+*   **Robust Comparison:** Runs the final comparison multiple times to provide mean and standard deviation of the performance metrics, ensuring statistical significance.
+*   **Detailed Reporting:** Generates a `comparison_report.md` with the best hyperparameters found and the final performance comparison. It also saves the full optimization history to a CSV file.
+*   **Persistent & Collaborative:** Uses an SQLite backend (`optuna_hrem.db`) to save study progress, allowing you to stop and resume optimization. You can also monitor the progress in real-time with `optuna-dashboard`.
+
+**Usage:**
+
+1.  **Start the optimization:**
+    ```bash
+    python optimize_eval.py --dataset <DATASET_NAME> --n-trials <NUM_TRIALS> --n-final-runs <NUM_RUNS>
+    ```
+    *   `--dataset`: The dataset to use (e.g., `arc`, `sudoku`).
+    *   `--n-trials`: The number of hyperparameter combinations to try.
+    *   `--n-final-runs`: The number of times to run the final comparison to get statistically significant results.
+    *   `--smoke-test`: Run a quick test with a small number of trials.
+
+2.  **(Optional) Monitor with Optuna Dashboard:**
+    While the optimization is running, you can launch the Optuna dashboard in a separate terminal to monitor the progress live:
+    ```bash
+    optuna-dashboard sqlite:///optuna_hrem.db
+    ```
+
+3.  **Review the Results:**
+    After the script finishes, you can find the results in:
+    *   `comparison_report.md`: A summary of the best parameters and the final comparison.
+    *   `hrem_optimization_results.csv`: A detailed log of all the trials.
+    *   `logs/`: A directory containing the detailed logs for each trial, useful for debugging.
 
 ## Notes
 

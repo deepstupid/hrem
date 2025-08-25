@@ -21,7 +21,10 @@ def run_evaluation(config: ExperimentConfig) -> Dict[str, Any]:
     logger(f"--- Starting Evaluation: {run_config.study_name} ---")
 
     all_metrics = {}
+    # Check if we have a third model to evaluate
     models_to_run = [eval_config.model_a, eval_config.model_b]
+    if hasattr(eval_config, 'model_c') and eval_config.model_c:
+        models_to_run.append(eval_config.model_c)
 
     for model_config in models_to_run:
         logger(f"\n[bold blue]--- Running Model: {model_config.name} ---[/bold blue]")

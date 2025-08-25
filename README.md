@@ -63,6 +63,15 @@ python run_demo_cli.py --interactive
 - Configurable hierarchy levels (H_layers, L_layers) and cycles (H_cycles, L_cycles)
 - Enhanced memory management with location-based addressing
 
+### Enhanced HREM
+Our repository also includes an enhanced version of HREM with several performance improvements:
+- Improved training algorithm with AdamW optimizer and automatic mixed precision
+- Optimized architecture with larger memory dimensions and higher top-k values
+- Better hyperparameter search space for optimal configurations
+- Faster training and improved convergence characteristics
+
+See `ENHANCED_HREM_README.md` for more details on the enhancements.
+
 ## Evaluation and Optimization Framework
 
 Our repository includes a comprehensive evaluation and optimization framework that enables scientific methodology for model comparison and hyperparameter tuning.

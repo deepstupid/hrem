@@ -93,17 +93,32 @@ def generate_evaluation_report(
     
     report_lines = summary_lines + [""]
     
-    # Add model parameters to the report
-    models_in_report = [eval_config.model_a, eval_config.model_b]
-    for model_config in models_in_report:
-        # Check if this is an HREM-like model
-        if "hrem" in model_config.algorithm_class.lower() and model_config.hrem_params:
-            report_lines.append(f"## {model_config.name} Parameters")
-            report_lines.append("| Parameter | Value |")
-            report_lines.append("|---|---|")
-            for key, value in model_config.hrem_params.model_dump().items():
-                report_lines.append(f"| {key} | {value} |")
-            report_lines.append("")
+    # Add model parameters to the report for all models
+    # Get all model configs that were evaluated
+    model_configs = []
+    if hasattr(eval_config, 'model_a') and eval_config.model_a:
+        model_configs.append(eval_config.model_a)
+    if hasattr(eval_config, 'model_b') and eval_config.model_b:
+        model_configs.append(eval_config.model_b)
+    if hasattr(eval_config, 'model_c') and eval_config.model_c:
+        model_configs.append(eval_config.model_c)
+    
+    # Add parameters for any HREM-like models
+    for model_config in model_configs:
+        # Only add parameters section if this model was actually evaluated
+        if model_config.name in model_names:
+            # Check if this is an HREM-like model
+            is_hrem_like = ("hrem" in model_config.algorithm_class.lower() and 
+                           hasattr(model_config, 'hrem_params') and 
+                           model_config.hrem_params)
+            
+            if is_hrem_like:
+                report_lines.append(f"## {model_config.name} Parameters")
+                report_lines.append("| Parameter | Value |")
+                report_lines.append("|---|---|")
+                for key, value in model_config.hrem_params.model_dump().items():
+                    report_lines.append(f"| {key} | {value} |")
+                report_lines.append("")
 
     # Add the main metrics table
     report_lines.append("## Detailed Metrics Comparison")

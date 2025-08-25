@@ -1,0 +1,35 @@
+# Enhanced HREM training config with improved performance parameters
+
+defaults:
+  - arch: enhanced_hrem_v1
+  - _self_
+
+hydra:
+  output_subdir: null
+
+# Data path
+data_path: data/arc-aug-1000
+
+# Hyperparams - Training
+global_batch_size: 1024  # Increased batch size for better training stability
+
+epochs: 100000
+eval_interval: 5000   # More frequent evaluation
+checkpoint_every_eval: True
+
+lr: 3e-4              # Higher learning rate for faster convergence
+lr_min_ratio: 0.05    # Lower minimum ratio for better fine-tuning
+lr_warmup_steps: 1000 # Shorter warmup for faster initial training
+
+# Standard hyperparameter settings for LM, as used in Llama
+beta1: 0.9
+beta2: 0.95
+weight_decay: 0.01    # Lower weight decay for better generalization
+puzzle_emb_weight_decay: 0.01
+
+# Hyperparams - Puzzle embeddings training
+puzzle_emb_lr: 3e-3   # Higher learning rate for puzzle embeddings
+
+# Enhanced training parameters
+use_amp: true         # Enable automatic mixed precision
+gradient_clip_norm: 1.0  # Gradient clipping for stability

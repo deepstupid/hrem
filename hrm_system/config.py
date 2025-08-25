@@ -58,6 +58,7 @@ class EvaluationConfig(BaseModel):
     # The evaluation mode compares two models.
     model_a: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"), description="The first model to compare (baseline).")
     model_b: ModelConfig = Field(default_factory=lambda: ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1"), description="The second model to compare.")
+    model_c: ModelConfig = Field(default_factory=lambda: ModelConfig(name="EnhancedHREM", algorithm_class="hrm_system.algorithms.enhanced_hrem.EnhancedHREMAlgorithm", base_arch_config="enhanced_hrem_v1"), description="The enhanced model to compare.")
 
 class OptimizationConfig(BaseModel):
     """Configuration for the hyperparameter optimization mode."""

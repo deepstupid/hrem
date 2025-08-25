@@ -21,4 +21,3 @@ use_location_addressing: true
 loss:
   name: losses@ACTLossHead
   loss_type: stablemax_cross_entropy
-  q_learning_gamma: 0.9

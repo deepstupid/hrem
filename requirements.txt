@@ -14,3 +14,6 @@ pandas
 optuna
 rich
 optuna-dashboard
+textual
+pytest
+click

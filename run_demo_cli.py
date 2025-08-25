@@ -76,8 +76,8 @@ def get_config_settings(is_fast_mode: bool) -> Dict[str, Any]:
             "baseline_eval_interval": 50,
             "opt_epochs": 150,
             "opt_eval_interval": 50,
-            "opt_trials": 5,
-            "final_epochs": 200,
+            "opt_trials": 10,
+            "final_epochs": 400,
             "final_eval_interval": 50
         }
 

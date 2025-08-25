@@ -92,9 +92,9 @@ class DemoConfiguration:
             return {
                 "baseline_epochs": 200,
                 "baseline_eval_interval": 50,
-                "opt_epochs": 150,
+                "opt_epochs": 300,
                 "opt_eval_interval": 50,
-                "opt_trials": 10,
+                "opt_trials": 20,
                 "final_epochs": 400,
                 "final_eval_interval": 50
             }
@@ -171,6 +171,9 @@ class ResultsDisplay:
     @staticmethod
     def _format_metric_value(val, key):
         """Format metric values for display."""
+        # Handle NaN values explicitly
+        if isinstance(val, float) and (val != val):  # NaN check
+            return "N/A"
         if isinstance(val, (int, float)):
             if key == 'num_params':
                 return f"{val:,}"  # Add commas for large numbers
@@ -276,6 +279,9 @@ class ResultsDisplay:
     @staticmethod
     def _format_value(val, key):
         """Helper method to format values for display."""
+        # Handle NaN values explicitly
+        if isinstance(val, float) and (val != val):  # NaN check
+            return "N/A"
         if isinstance(val, (int, float)):
             if key == 'num_params':
                 return f"{val:,}"

@@ -214,18 +214,14 @@ class ResultsDisplay:
             console.print(table)
     
     @staticmethod
-    def display_side_by_side_comparison(title: str, baseline_results: Dict[str, Any], optimized_results: Dict[str, Any]):
-        """Display a clear side-by-side comparison of baseline vs optimized results for all models."""
+    def display_final_comparison(title: str, final_results: Dict[str, Any]):
+        """Display a clear comparison of final results for all models."""
         console.print(Panel(f"[bold]{title}[/bold]", expand=False))
         
-        # Get baseline model names (those not ending with '_best')
-        baseline_models = [name for name in baseline_results.keys() if not name.endswith('_best')]
-        # Get optimized model names (those ending with '_best')
-        optimized_models = [name for name in optimized_results.keys() if name.endswith('_best')]
-        # Get base names of optimized models (without '_best' suffix)
-        base_names = [name.replace('_best', '') for name in optimized_models]
+        # Get all model names from final results
+        model_names = list(final_results.keys())
         
-        if not baseline_models and not base_names:
+        if not model_names:
             console.print("[dim]No models to compare[/dim]")
             return
         
@@ -233,16 +229,13 @@ class ResultsDisplay:
         table = Table(show_header=True, header_style="bold magenta", box=box.ROUNDED)
         table.add_column("Metric", style="cyan")
         
-        # Add columns for baseline models
+        # Add columns for each model
         model_styles = {"HRM": "blue", "HREM": "green", "EnhancedHREM": "yellow", "HREM_best": "bright_green", "HRM_best": "blue"}
-        for model_name in sorted(baseline_models):
+        for model_name in sorted(model_names):
             base_style = model_styles.get(model_name, "white")
-            table.add_column(f"{model_name} Baseline", justify="right", style=f"bold {base_style}")
-        
-        # Add columns for optimized models
-        for model_name in sorted(base_names):
-            base_style = model_styles.get(model_name, "white")
-            table.add_column(f"{model_name} Optimized", justify="right", style=base_style)
+            # Remove '_best' suffix for cleaner display
+            display_name = model_name.replace('_best', '') + ' (Optimized)'
+            table.add_column(display_name, justify="right", style=base_style)
         
         # Key metrics for comparison
         metrics_info = [
@@ -254,19 +247,9 @@ class ResultsDisplay:
         
         for key, display_name in metrics_info:
             row_values = []
-            # Add baseline values
-            for model_name in sorted(baseline_models):
-                baseline_val = baseline_results.get(model_name, {}).get(key, 'N/A')
-                row_values.append(ResultsDisplay._format_value(baseline_val, key))
-                
-            # Add optimized values
-            for base_name in sorted(base_names):
-                optimized_name = f"{base_name}_best"
-                if optimized_name in optimized_results:
-                    optimized_val = optimized_results.get(optimized_name, {}).get(key, 'N/A')
-                    row_values.append(ResultsDisplay._format_value(optimized_val, key))
-                else:
-                    row_values.append('N/A')
+            for model_name in sorted(model_names):
+                val = final_results.get(model_name, {}).get(key, 'N/A')
+                row_values.append(ResultsDisplay._format_value(val, key))
             
             table.add_row(display_name, *row_values)
         
@@ -838,8 +821,8 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         # Summary
         ResultsDisplay.display_iteration_header("✅ Demonstration Completed Successfully!")
         
-        # Display side-by-side comparison
-        ResultsDisplay.display_side_by_side_comparison("📊 Side-by-Side Performance Comparison", baseline_results, final_results)
+        # Display final comparison
+        ResultsDisplay.display_final_comparison("📊 Final Performance Comparison", final_results)
         
         # Performance summary
         ResultsDisplay.display_performance_summary(baseline_results, final_results)

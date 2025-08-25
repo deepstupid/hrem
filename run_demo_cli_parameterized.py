@@ -156,6 +156,29 @@ class ResultsDisplay:
     """Handles displaying results in various formats."""
     
     @staticmethod
+    def _create_results_table(title: str, model_names: List[str], model_styles: Dict[str, str]) -> Table:
+        """Create a standardized results table with proper styling."""
+        table = Table(title=title, show_header=True, header_style="bold magenta", box=box.ROUNDED)
+        table.add_column("Metric", style="cyan")
+        
+        # Add columns for each model
+        for model_name in model_names:
+            style = model_styles.get(model_name, "bold white")
+            table.add_column(model_name, justify="right", style=style)
+        
+        return table
+    
+    @staticmethod
+    def _format_metric_value(val, key):
+        """Format metric values for display."""
+        if isinstance(val, (int, float)):
+            if key == 'num_params':
+                return f"{val:,}"  # Add commas for large numbers
+            else:
+                return f"{val:.4f}"
+        return str(val)
+    
+    @staticmethod
     def display_model_detailed_stats(title: str, results: Dict[str, Any], model_names: list = None):
         """Display detailed statistics for models including parameter counts and performance metrics."""
         if not model_names:
@@ -165,14 +188,9 @@ class ResultsDisplay:
         if not model_names:
             return
             
-        table = Table(title=title, show_header=True, header_style="bold magenta", box=box.ROUNDED)
-        table.add_column("Metric", style="cyan")
-        
-        # Add columns for each model
+        # Create table with consistent styling
         model_styles = {"HRM": "bold blue", "HREM": "bold green", "HREM_best": "bold bright_green", "HRM_best": "bold blue"}
-        for model_name in model_names:
-            style = model_styles.get(model_name, "bold white")
-            table.add_column(model_name, justify="right", style=style)
+        table = ResultsDisplay._create_results_table(title, model_names, model_styles)
         
         if results:
             # Get metrics for available models
@@ -201,12 +219,7 @@ class ResultsDisplay:
                     if model_name in model_metrics:
                         val = model_metrics[model_name].get(key, 'N/A')
                         # Format values
-                        if isinstance(val, (int, float)):
-                            if key == 'num_params':
-                                val = f"{val:,}"  # Add commas for large numbers
-                            else:
-                                val = f"{val:.4f}"
-                        row_values.append(str(val))
+                        row_values.append(ResultsDisplay._format_metric_value(val, key))
                     else:
                         row_values.append('N/A')
                 
@@ -227,16 +240,20 @@ class ResultsDisplay:
             return
         
         # Create comparison table
-        table = Table(show_header=True, header_style="bold magenta", box=box.ROUNDED)
-        table.add_column("Metric", style="cyan")
-        
-        # Add columns for each model
         model_styles = {"HRM": "blue", "HREM": "green", "EnhancedHREM": "yellow", "HREM_best": "bright_green", "HRM_best": "blue"}
-        for model_name in sorted(model_names):
+        table = ResultsDisplay._create_results_table("", sorted(model_names), model_styles)
+        
+        # Add columns for each model with custom display names
+        table.columns[0].header = "Metric"  # Reset first column header
+        
+        # Update column headers with styled names
+        for i, model_name in enumerate(sorted(model_names), 1):  # Start from 1 because first column is Metric
             base_style = model_styles.get(model_name, "white")
             # Remove '_best' suffix for cleaner display
             display_name = model_name.replace('_best', '') + ' (Optimized)'
-            table.add_column(display_name, justify="right", style=base_style)
+            table.columns[i]._header = display_name
+            table.columns[i].style = base_style
+            table.columns[i].justify = "right"
         
         # Key metrics for comparison
         metrics_info = [
@@ -290,34 +307,6 @@ class ResultsDisplay:
             console.print(f"[dim]Accuracy: {best_accuracy:.4f}[/dim]")
     
     @staticmethod
-    def display_performance_improvements(baseline_results: Dict[str, Any], final_results: Dict[str, Any]):
-        """Display performance improvements for all models."""
-        console.print("\n[bold]📈 Performance Improvements:[/bold]")
-        
-        # Get all models that have optimized versions
-        optimized_models = [name for name in final_results.keys() if name.endswith('_best')]
-        
-        for opt_model_name in optimized_models:
-            # Get base model name (remove '_best' suffix)
-            base_model_name = opt_model_name.replace('_best', '')
-            
-            final_acc = final_results[opt_model_name].get('all/accuracy', 0)
-            baseline_acc = baseline_results.get(base_model_name, {}).get('all/accuracy', 0)
-            
-            try:
-                final_acc = float(final_acc) if isinstance(final_acc, str) else final_acc
-                baseline_acc = float(baseline_acc) if isinstance(baseline_acc, str) else baseline_acc
-                improvement = final_acc - baseline_acc
-                if improvement > 0:
-                    console.print(f"  [bold green]{opt_model_name}[/bold green]: +{improvement:.4f} (+{improvement/baseline_acc*100:.1f}%)")
-                elif improvement < 0:
-                    console.print(f"  [bold red]{opt_model_name}[/bold red]: {improvement:.4f} ({improvement/baseline_acc*100:.1f}%)")
-                else:
-                    console.print(f"  [bold yellow]{opt_model_name}[/bold yellow]: No change")
-            except (ValueError, TypeError):
-                console.print(f"  [dim]{opt_model_name}: Unable to calculate improvement[/dim]")
-    
-    @staticmethod
     def display_final_leader(final_results: Dict[str, Any]):
         """Display the final leader based on accuracy."""
         if not final_results:
@@ -340,48 +329,10 @@ class ResultsDisplay:
             console.print(f"\n[bold green]🏆 Final Leader: {best_model_final}[/bold green]")
             console.print(f"[dim]Accuracy: {best_accuracy_final:.4f}[/dim]")
     
-    @staticmethod
-    def display_performance_summary(baseline_results: Dict[str, Any], final_results: Dict[str, Any]):
-        """Display performance summary for all models."""
-        console.print("\n[bold]📈 Performance Summary:[/bold]")
-        
-        # Get all base models
-        base_models = [name for name in baseline_results.keys() if not name.endswith('_best')]
-        
-        for model_name in base_models:
-            baseline_acc = baseline_results.get(model_name, {}).get('all/accuracy', 0)
-            final_acc = final_results.get(f"{model_name}_best", {}).get('all/accuracy', 0)
-            try:
-                baseline_acc = float(baseline_acc) if isinstance(baseline_acc, str) else baseline_acc
-                final_acc = float(final_acc) if isinstance(final_acc, str) else final_acc
-                console.print(f"  {model_name} baseline performance:           {baseline_acc:.4f}")
-                console.print(f"  {model_name} optimized performance:          {final_acc:.4f}")
-                improvement = final_acc - baseline_acc
-                console.print(f"  {model_name} performance improvement:        {improvement:+.4f}")
-            except (ValueError, TypeError):
-                console.print(f"  {model_name}: Unable to calculate performance")
+    # Removed display_performance_improvements method (no longer needed)
+    # Removed display_performance_summary method (no longer needed)
     
-    @staticmethod
-    def display_cost_benefit_analysis(baseline_results: Dict[str, Any], final_results: Dict[str, Any]):
-        """Display cost-benefit analysis for all models."""
-        console.print("\n[bold]💰 Cost-Benefit Analysis:[/bold]")
-        
-        # Get all base models
-        base_models = [name for name in baseline_results.keys() if not name.endswith('_best')]
-        
-        for model_name in base_models:
-            baseline_params = baseline_results.get(model_name, {}).get('num_params', 0)
-            final_params = final_results.get(f"{model_name}_best", {}).get('num_params', 0)
-            try:
-                baseline_params = int(float(baseline_params)) if isinstance(baseline_params, (str, float)) else int(baseline_params)
-                final_params = int(float(final_params)) if isinstance(final_params, (str, float)) else int(final_params)
-                console.print(f"  {model_name} baseline parameter count:       {baseline_params:,}")
-                console.print(f"  {model_name} optimized parameter count:      {final_params:,}")
-                if baseline_params != 0:
-                    param_change = ((final_params - baseline_params) / baseline_params) * 100
-                    console.print(f"  {model_name} parameter difference:           {param_change:+.1f}%")
-            except (ValueError, TypeError):
-                console.print(f"  {model_name}: Unable to calculate parameter changes")
+    # Removed cost_benefit_analysis method
     
     @staticmethod
     def display_hrem_params(title: str, params: HREMParams):
@@ -415,74 +366,19 @@ class ExperimentRunner:
         self.config = config
         self.logger = DemoLogger()
     
-    def run_baseline_evaluation(self, study_name: str, data_config: DataConfig, model_configs: List[ModelConfig] = None) -> Dict[str, Any]:
-        """Run a baseline evaluation of models."""
-        ResultsDisplay.display_iteration_header("🏁 Step 1: Establishing Baseline Performance", 
-                               f"Running models on {data_config.dataset} dataset to establish baseline performance...")
-        
-        config_settings = self.config.config_settings
-        
-        # If no specific models provided, use default HRM, HREM, and EnhancedHREM
-        if model_configs is None:
-            model_configs = [
-                ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"),
-                ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1"),
-                ModelConfig(name="EnhancedHREM", algorithm_class="hrm_system.algorithms.enhanced_hrem.EnhancedHREMAlgorithm", base_arch_config="enhanced_hrem_v1")
-            ]
-        
-        # Create evaluation config with all models
-        eval_config_dict = {
-            "n_runs": 1
-        }
-        
-        # Add models to evaluation config (up to 5 models supported directly)
-        model_keys = ["model_a", "model_b", "model_c", "model_d", "model_e"]
-        for i, model_config in enumerate(model_configs):
-            if i < len(model_keys):
-                eval_config_dict[model_keys[i]] = model_config
-            else:
-                break  # Only support up to 5 models directly
-        
-        config = ExperimentConfig(
-            mode="evaluate",
-            run_config=RunConfig(
-                smoke_test=True,
-                study_name=study_name,
-                logger_callback=self.logger.log
-            ),
-            data_config=data_config,
-            training_config=TrainingConfig(
-                epochs=config_settings["baseline_epochs"], 
-                eval_interval=config_settings["baseline_eval_interval"]
-            ),
-            evaluation_config=EvaluationConfig(**eval_config_dict)
-        )
-        
-        start_time = time.time()
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-        ) as progress:
-            progress.add_task(description="Running baseline evaluation...", total=None)
-            try:
-                results = run_evaluation(config)
-            except Exception as e:
-                # Handle dataset-related errors more gracefully
-                if "No such file or directory" in str(e) and "raw-data" in str(e):
-                    console.print(f"[bold red]❌ Dataset not found![/bold red]")
-                    console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
-                    console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
-                    console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
-                    raise SystemExit(1)
-                else:
-                    # Re-raise other exceptions
-                    raise e
-                
-        elapsed_time = time.time() - start_time
-        console.print(f"[dim]⏱️  Evaluation completed in {elapsed_time:.1f} seconds[/dim]")
-            
-        return results.get("results", {})
+    def _handle_dataset_error(self, e: Exception, data_config: DataConfig):
+        """Handle dataset-related errors more gracefully."""
+        if "No such file or directory" in str(e) and "raw-data" in str(e):
+            console.print(f"[bold red]❌ Dataset not found![/bold red]")
+            console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
+            console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
+            console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
+            raise SystemExit(1)
+        else:
+            # Re-raise other exceptions
+            raise e
+    
+    # Removed run_baseline_evaluation method (no longer needed)
     
     def run_hyperparameter_optimization_for_model(self, model_config: ModelConfig, study_name: str, data_config: DataConfig) -> Dict[str, Any]:
         """Run hyperparameter optimization for a single model."""
@@ -545,16 +441,7 @@ class ExperimentRunner:
             try:
                 result = run_optimization(config)
             except Exception as e:
-                # Handle dataset-related errors more gracefully
-                if "No such file or directory" in str(e) and "raw-data" in str(e):
-                    console.print(f"[bold red]❌ Dataset not found![/bold red]")
-                    console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
-                    console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
-                    console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
-                    raise SystemExit(1)
-                else:
-                    # Re-raise other exceptions
-                    raise e
+                self._handle_dataset_error(e, data_config)
         
         elapsed_time = time.time() - start_time
         console.print(f"[dim]⏱️  {model_config.name} optimization completed in {elapsed_time:.1f} seconds[/dim]")
@@ -672,16 +559,7 @@ class ExperimentRunner:
             try:
                 results = run_evaluation(config)
             except Exception as e:
-                # Handle dataset-related errors more gracefully
-                if "No such file or directory" in str(e) and "raw-data" in str(e):
-                    console.print(f"[bold red]❌ Dataset not found![/bold red]")
-                    console.print(f"[yellow]The {data_config.dataset} dataset requires raw data files that are not included in this repository.[/yellow]")
-                    console.print("[dim]Please download the required dataset files or try a different challenge.[/dim]")
-                    console.print("[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]")
-                    raise SystemExit(1)
-                else:
-                    # Re-raise other exceptions
-                    raise e
+                self._handle_dataset_error(e, data_config)
                 
         elapsed_time = time.time() - start_time
         console.print(f"[dim]⏱️  Final evaluation completed in {elapsed_time:.1f} seconds[/dim]")
@@ -712,6 +590,21 @@ def get_model_configs(model_names: List[str]) -> List[ModelConfig]:
             console.print(f"[bold yellow]Warning: Unknown model '{name}', skipping...[/bold yellow]")
     
     return configs
+
+def _display_optimization_results(model_name: str, opt_result: Dict[str, Any]):
+    """Display optimization results for a single model."""
+    if opt_result and "best_params" in opt_result:
+        console.print(f"\n[bold blue]{model_name} Optimization Results:[/bold blue]")
+        # Display parameters in a table
+        params_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+        params_table.add_column("Parameter", style="dim")
+        params_table.add_column("Value", justify="right")
+        for key, value in opt_result["best_params"].items():
+            params_table.add_row(key, str(value))
+        console.print(params_table)
+    else:
+        console.print(f"\n[bold blue]{model_name} Optimization Results:[/bold blue]")
+        console.print("  No optimization parameters found")
 
 def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: str = None, model_names: List[str] = None):
     """Run the HRM vs HREM demonstration in the console, parameterized by challenge and models."""
@@ -774,14 +667,12 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         console.print(f"\n[bold]Challenge:[/bold] {selected_challenge.name}")
         console.print(f"[dim]{selected_challenge.description}[/dim]")
         console.print("\n[bold]This demonstration showcases:[/bold]")
-        console.print("• 📊 Baseline evaluation of models")
         console.print("• 🔍 Hyperparameter optimization with real-time feedback")
-        console.print("• 🏆 Final comparison showing performance gains")
+        console.print("• 🏆 Best results and their parameters")
         
         # Approach explanation
         console.print("\n[bold blue]🧠 Approach Explanation[/bold blue]")
         console.print("The HRM System uses a novel approach to hyperparameter optimization:")
-        console.print("• Starts with baseline models to establish performance reference")
         console.print("• Uses guided search to explore hyperparameter space efficiently")
         console.print("• Generates actionable results after each iteration")
         console.print("• Continuously improves based on real-time feedback")
@@ -789,48 +680,23 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         # Create experiment runner
         runner = ExperimentRunner(demo_config)
         
-        # Step 1: Baseline evaluation
-        baseline_results = runner.run_baseline_evaluation("cli_demo_baseline", selected_challenge.data_config, model_configs)
-        ResultsDisplay.display_model_detailed_stats("📊 Baseline Results", baseline_results)
-        ResultsDisplay.display_current_leader(baseline_results)
-        
-        if interactive:
-            try:
-                input("\n[bold blue]Press Enter to continue to optimization...[/bold blue]")
-            except EOFError:
-                pass  # Continue if input is not available
-        
-        # Step 2: Hyperparameter optimization
+        # Step 1: Hyperparameter optimization
         # Optimize all specified models
         optimization_results = runner.run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config, model_configs)
         
         # Display optimization results
         for model_name, opt_result in optimization_results.items():
-            if opt_result and "best_params" in opt_result:
-                console.print(f"\n[bold blue]{model_name} Optimization Results:[/bold blue]")
-                # Display parameters in a table
-                params_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
-                params_table.add_column("Parameter", style="dim")
-                params_table.add_column("Value", justify="right")
-                for key, value in opt_result["best_params"].items():
-                    params_table.add_row(key, str(value))
-                console.print(params_table)
-            else:
-                console.print(f"\n[bold blue]{model_name} Optimization Results:[/bold blue]")
-                console.print("  No optimization parameters found")
+            _display_optimization_results(model_name, opt_result)
         
         if interactive:
             try:
-                input("\n[bold blue]Press Enter to see final comparison...[/bold blue]")
+                input("\n[bold blue]Press Enter to see final evaluation...[/bold blue]")
             except EOFError:
                 pass  # Continue if input is not available
         
-        # Step 3: Final comparison
+        # Step 2: Final evaluation with best parameters
         final_results = runner.run_final_evaluation(optimization_results, model_configs, "cli_demo_final", selected_challenge.data_config)
-        ResultsDisplay.display_model_detailed_stats("📊 Final Results", final_results)
-        
-        # Show improvements for all models
-        ResultsDisplay.display_performance_improvements(baseline_results, final_results)
+        ResultsDisplay.display_model_detailed_stats("🏆 Best Results", final_results)
         
         # Show final leader
         ResultsDisplay.display_final_leader(final_results)
@@ -839,13 +705,7 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         ResultsDisplay.display_iteration_header("✅ Demonstration Completed Successfully!")
         
         # Display final comparison
-        ResultsDisplay.display_final_comparison("📊 Final Performance Comparison", final_results)
-        
-        # Performance summary
-        ResultsDisplay.display_performance_summary(baseline_results, final_results)
-        
-        # Cost-benefit analysis
-        ResultsDisplay.display_cost_benefit_analysis(baseline_results, final_results)
+        ResultsDisplay.display_final_comparison("📊 Best Performance Comparison", final_results)
         
         # Key insights
         console.print("\n[bold]🔑 Key Insights:[/bold]")
@@ -863,15 +723,6 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         console.print("• No configuration parameters needed - fully turnkey")
         console.print("\n[italic]The system begins generating results immediately,[/italic]")
         console.print("[italic]allowing for continuous improvement and insights.[/italic]")
-        
-        # Summary conclusion
-        console.print("\n[bold blue]📋 Summary Conclusion:[/bold blue]")
-        console.print("This demonstration showed how different algorithmic approaches to memory-augmented neural networks")
-        console.print("can be systematically evaluated and optimized. The results highlight:")
-        console.print("1. The effectiveness of guided hyperparameter optimization in improving model performance")
-        console.print("2. The trade-offs between different architectural approaches in terms of accuracy and efficiency")
-        console.print("3. The importance of real-time feedback in iterative model development")
-        console.print("4. How parameter-efficient designs can achieve competitive performance")
         
     except Exception as e:
         console.print(f"[bold red]❌ Demo failed: {e}[/bold red]")

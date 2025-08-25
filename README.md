@@ -48,6 +48,20 @@ Add `--interactive` flag for step-by-step execution:
 python run_demo_cli.py --interactive
 ```
 
+### Parameterized CLI Demo
+
+We also provide a parameterized version of the CLI demo that allows you to specify which challenge and models to run:
+
+```bash
+# Run with specific challenge and models
+python run_demo_cli_parameterized.py --challenge-key "ARC Challenge" --models HRM HREM EnhancedHREM
+
+# Run in fast mode for quicker testing
+python run_demo_cli_parameterized.py --fast --challenge-key "ARC Challenge"
+```
+
+See `PARAMETERIZED_DEMO_README.md` for more details on using the parameterized demo.
+
 ## HRM vs HREM: Architectural Differences
 
 ### Hierarchical Reasoning Model (HRM)

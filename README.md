@@ -161,6 +161,31 @@ OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 pretrain.py data_path=data/sudoku-
 ## Model Evaluation and Optimization
 Beyond training, this repository provides powerful tools for model evaluation, comparison, and hyperparameter optimization. These tools are crucial for robustly assessing model performance and for exploring the capabilities of the HREM architecture. All evaluation and optimization scripts are located in the `optimization/` directory.
 
+## Text-based User Interface (TUI) 🖥️
+For a more intuitive way to access all functionality, this repository includes a Text-based User Interface built with Textual. The TUI provides a terminal-based graphical interface to:
+
+- Run model evaluations
+- Perform hyperparameter optimization
+- Execute unit tests
+- Manage datasets
+- Visualize datasets
+
+### Installation
+Make sure you have Textual installed:
+```bash
+pip install textual
+```
+
+### Running the TUI
+To start the TUI, run:
+```bash
+python -m tui.app
+```
+or
+```bash
+python run_tui.py
+```
+
 ### Standard Evaluation
 There are two primary ways to evaluate models:
 

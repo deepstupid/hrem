@@ -1,7 +1,7 @@
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static, Select, Input, Button, Checkbox, Log
-from textual.worker import worker
+from textual import work
 
 from hrm_system import (
     ExperimentConfig,
@@ -71,7 +71,7 @@ class OptimizationScreen(Static):
         log_widget.write(f"Starting optimization: {study_name}...")
         self.run_worker(self.execute_optimization, config, exclusive=True)
 
-    @worker
+    @work(thread=True, exclusive=True)
     def execute_optimization(self, config: ExperimentConfig) -> None:
         """The worker thread that runs the optimization."""
         try:

@@ -130,8 +130,23 @@ def run_single_model(
     if best_entry is None:
         best_entry = data[-1] if data else {}
 
+    # Combine all entries to ensure we capture parameter counts and other metadata
+    combined_entry = {}
+    for entry in data:
+        # Merge all keys from all entries
+        for key, value in entry.items():
+            # If it's a nested dict (like "all"), merge it properly
+            if key == "all" and isinstance(value, dict):
+                if "all" not in combined_entry:
+                    combined_entry["all"] = {}
+                combined_entry["all"].update(value)
+            else:
+                # For top-level keys, use the value from the best entry or the last entry with that key
+                if key not in combined_entry or entry == best_entry:
+                    combined_entry[key] = value
+
     # Normalize the nested dictionary into a flat dictionary
-    final_metrics = pd.json_normalize(best_entry, sep='/').to_dict(orient='records')[0] if best_entry else {}
+    final_metrics = pd.json_normalize(combined_entry, sep='/').to_dict(orient='records')[0] if combined_entry else {}
 
     logger(f"Finished running model: {model_config.name}. Final loss: {final_metrics.get('all/lm_loss', 'N/A')}")
     return final_metrics

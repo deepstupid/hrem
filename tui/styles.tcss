@@ -1,0 +1,112 @@
+/* HRM System TUI Styles */
+
+Header {
+    background: blue 40%;
+    color: white;
+    height: 3;
+}
+
+Footer {
+    background: blue 30%;
+    color: white;
+    height: 2;
+}
+
+TabbedContent {
+    height: 1fr;
+}
+
+.header {
+    background: darkblue 50%;
+    color: white;
+    text-align: center;
+    padding: 1 2;
+    margin: 1 0;
+    border: round white;
+}
+
+.subheader {
+    text-align: center;
+    padding: 0 2;
+    margin: 0 0 1 0;
+    color: blue;
+}
+
+.highlight {
+    text-align: center;
+    padding: 0 2;
+    margin: 0 0 1 0;
+    color: green;
+    text-style: bold;
+}
+
+.controls {
+    height: 5;
+    padding: 1 2;
+    align: center middle;
+}
+
+Button {
+    margin: 0 2;
+}
+
+Button:focus {
+    text-style: bold;
+}
+
+.progress-container {
+    height: 6;
+    margin: 1 0;
+    padding: 0 2;
+}
+
+.model-progress {
+    width: 1fr;
+    height: 4;
+    margin: 0 1;
+}
+
+.model-label {
+    text-align: center;
+    color: blue;
+    margin: 0 0 1 0;
+}
+
+.log_view {
+    height: 1fr;
+    border: round blue;
+    background: black 10%;
+    padding: 1 2;
+}
+
+DataTable {
+    margin: 1 0;
+    padding: 0 1;
+    height: 8;
+}
+
+/* Form styling */
+.form {
+    margin: 1 0;
+    padding: 1 2;
+    border: round blue;
+}
+
+.form Static {
+    margin: 1 0 0 0;
+    color: blue;
+}
+
+.form Input {
+    width: 100%;
+    margin: 0 0 1 0;
+}
+
+.form Select {
+    width: 100%;
+    margin: 0 0 1 0;
+}
+
+.form Checkbox {
+    margin: 0 0 1 0;
+}

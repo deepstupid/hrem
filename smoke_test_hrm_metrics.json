@@ -8,7 +8,7 @@
         "train/accuracy": 0.0,
         "train/count": 0.0,
         "train/exact_accuracy": 0.0,
-        "train/lm_loss": 2.1410769759694532,
+        "train/lm_loss": 2.3628728756499706,
         "train/q_continue_loss": 0.04017925262451172,
         "train/q_halt_accuracy": 0.0,
         "train/q_halt_loss": 0.006715297698974609,
@@ -20,7 +20,7 @@
         "all": {
             "accuracy": 0.0,
             "exact_accuracy": 0.0,
-            "lm_loss": 2.306533098220825,
+            "lm_loss": 2.7754619121551514,
             "q_halt_accuracy": 1.0,
             "q_halt_loss": 0.006715297698974609,
             "steps": 16.0

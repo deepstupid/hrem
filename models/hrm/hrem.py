@@ -31,9 +31,7 @@ class HREM(HierarchicalReasoningModel_ACTV1):
             d_model=self.config.hidden_size,
             m_loc=self.config.m_loc,
             d_mem=self.config.d_mem,
-            top_k=(
-                self.config.top_k if self.config.top_k is not None else 4
-            ),  # Default from old code
+            top_k=self.config.top_k,
             sparse_addressing=self.config.sparse_addressing,
             use_location_addressing=self.config.use_location_addressing,
             forward_dtype=self.config.forward_dtype,

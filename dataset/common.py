@@ -44,7 +44,7 @@ def dihedral_transform(arr: np.ndarray, tid: int) -> np.ndarray:
     elif tid == 7:
         return np.fliplr(np.rot90(arr, k=1))  # anti-diagonal reflection
     else:
-        return arr
+        raise ValueError(f"Invalid transform id: {tid}")
     
     
 def inverse_dihedral_transform(arr: np.ndarray, tid: int) -> np.ndarray:

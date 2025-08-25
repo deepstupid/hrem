@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 from .hrm_act_v1 import HierarchicalReasoningModel_ACTV1, HierarchicalReasoningModel_ACTV1Carry
 from .external_memory import ExternalMemory
@@ -19,7 +19,7 @@ class HREM(HierarchicalReasoningModel_ACTV1):
         # Pass the config to the parent HRM class
         super().__init__(config_dict)
 
-        self.use_memory = self.config.use_memory
+        self.use_memory = getattr(self.config, 'use_memory', False)
         if not self.use_memory:
             # If not using memory, this class is identical to HRM.
             return
@@ -29,15 +29,15 @@ class HREM(HierarchicalReasoningModel_ACTV1):
         # Memory-specific initializations, using the unified self.config
         self.memory = ExternalMemory(
             d_model=self.config.hidden_size,
-            m_loc=self.config.m_loc,
-            d_mem=self.config.d_mem,
-            top_k=self.config.top_k,
-            sparse_addressing=self.config.sparse_addressing,
-            use_location_addressing=self.config.use_location_addressing,
+            m_loc=getattr(self.config, 'm_loc', 128),
+            d_mem=getattr(self.config, 'd_mem', 128),
+            top_k=getattr(self.config, 'top_k', 4),
+            sparse_addressing=getattr(self.config, 'sparse_addressing', True),
+            use_location_addressing=getattr(self.config, 'use_location_addressing', True),
             forward_dtype=self.config.forward_dtype,
         )
         self.memory_readout_proj = nn.Linear(
-            self.config.d_mem, self.config.hidden_size, dtype=dtype
+            getattr(self.config, 'd_mem', 128), self.config.hidden_size, dtype=dtype
         )
 
     def initial_carry(
@@ -65,7 +65,7 @@ class HREM(HierarchicalReasoningModel_ACTV1):
         """
         Overrides the HRM forward pass to inject memory operations.
         """
-        if not self.use_memory:
+        if not getattr(self, 'use_memory', False):
             # If no memory, just call the parent's forward pass.
             # We need to adjust the carry format.
             hrm_carry, _ = carry
@@ -74,13 +74,11 @@ class HREM(HierarchicalReasoningModel_ACTV1):
 
         hrm_carry, mem_states = carry
 
-        # We need the current z_H to generate the memory interface vector.
-        # It's reset inside the parent's forward pass, so we need to peek into the carry.
-        # Let's reset it here to get the correct initial state.
-        current_inner_carry = self.inner.reset_carry(
-            hrm_carry.halted, hrm_carry.inner_carry
-        )
-        z_H_summary = current_inner_carry.z_H.mean(dim=1)
+        # Extract current hidden state before any modifications
+        # Use the current z_H from the carry to generate the memory interface vector
+        # This is more efficient than resetting and avoids potential inconsistencies
+        current_z_H = hrm_carry.inner_carry.z_H
+        z_H_summary = current_z_H.mean(dim=1)
 
         # Run the memory controller
         M_prev = mem_states["M"]

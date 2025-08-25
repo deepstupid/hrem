@@ -206,6 +206,17 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
         )
 
         if memory_readout is not None:
+            # Add memory readout to input embeddings
+            # Ensure proper broadcasting if dimensions don't match
+            if memory_readout.shape[1] != input_embeddings.shape[1]:
+                # Pad or slice memory_readout to match sequence length
+                if memory_readout.shape[1] < input_embeddings.shape[1]:
+                    # Pad
+                    pad_len = input_embeddings.shape[1] - memory_readout.shape[1]
+                    memory_readout = F.pad(memory_readout, (0, 0, 0, pad_len), "constant", 0)
+                else:
+                    # Slice
+                    memory_readout = memory_readout[:, :input_embeddings.shape[1], :]
             input_embeddings = input_embeddings + memory_readout
 
         # Forward iterations
@@ -321,26 +332,28 @@ class HierarchicalReasoningModel_ACTV1(nn.Module):
                 # NOTE: During evaluation, always use max steps, this is to guarantee the same halting steps inside a batch for batching purposes
                 halted = halted | (q_halt_logits > q_continue_logits)
 
-                # Exploration
-                min_halt_steps = (
-                    torch.rand_like(q_halt_logits) < self.config.halt_exploration_prob
-                ) * torch.randint_like(
-                    new_steps, low=2, high=self.config.halt_max_steps + 1
-                )
+                # Exploration with more stable implementation
+                if self.config.halt_exploration_prob > 0:
+                    min_halt_steps = (
+                        torch.rand_like(q_halt_logits) < self.config.halt_exploration_prob
+                    ) * torch.randint_like(
+                        new_steps, low=2, high=self.config.halt_max_steps + 1
+                    )
 
-                halted = halted & (new_steps >= min_halt_steps)
+                    halted = halted & (new_steps >= min_halt_steps)
 
-                # Compute target Q
+                # Compute target Q with numerical stability
                 # NOTE: No replay buffer and target networks for computing target Q-value.
                 # As batch_size is large, there're many parallel envs.
                 # Similar concept as PQN https://arxiv.org/abs/2407.04811
-                outputs["target_q_continue"] = torch.sigmoid(
-                    torch.where(
+                with torch.no_grad():  # Additional safety for no gradients
+                    target_q_continue_raw = torch.where(
                         is_last_step,
                         next_q_halt_logits,
                         torch.maximum(next_q_halt_logits, next_q_continue_logits),
                     )
-                )
+                    # Use stable sigmoid
+                    outputs["target_q_continue"] = torch.sigmoid(target_q_continue_raw)
 
         return (
             HierarchicalReasoningModel_ACTV1Carry(

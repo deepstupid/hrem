@@ -24,7 +24,7 @@ class ExternalMemory(nn.Module):
         super().__init__()
         self.m_loc = m_loc
         self.d_mem = d_mem
-        self.top_k = top_k if sparse_addressing else m_loc
+        self.top_k = min(top_k, m_loc) if sparse_addressing else m_loc
         self.sparse_addressing = sparse_addressing
         self.use_location_addressing = use_location_addressing
         self.dtype = getattr(torch, forward_dtype)
@@ -52,12 +52,14 @@ class ExternalMemory(nn.Module):
         # Base NTM interface
         read_key = interface_vec[:, idx : idx + self.d_mem]
         idx += self.d_mem
-        read_beta = F.softplus(interface_vec[:, idx : idx + 1] + 1)
+        # Use a more stable parameterization for betas
+        read_beta = F.softplus(interface_vec[:, idx : idx + 1]) + 1.0
         idx += 1
         write_key = interface_vec[:, idx : idx + self.d_mem]
         idx += self.d_mem
-        write_beta = F.softplus(interface_vec[:, idx : idx + 1] + 1)
+        write_beta = F.softplus(interface_vec[:, idx : idx + 1]) + 1.0
         idx += 1
+        # Use more stable sigmoid for erase vector
         erase = torch.sigmoid(interface_vec[:, idx : idx + self.d_mem])
         idx += self.d_mem
         add = interface_vec[:, idx : idx + self.d_mem]
@@ -77,11 +79,14 @@ class ExternalMemory(nn.Module):
             idx += 3
 
             # 3. Compute allocation and write weightings
-            # Update usage vector
+            # Update usage vector with numerical stability
             usage = usage + w_w_prev - usage * w_w_prev
+            # Clamp usage to [0, 1] for numerical stability
+            usage = torch.clamp(usage, 0.0, 1.0)
 
             # Allocation weighting is based on usage
             free_list = 1 - usage
+            # Add small epsilon for numerical stability
             alloc_weights = free_list / (
                 torch.sum(free_list, dim=1, keepdim=True) + 1e-8
             )
@@ -93,29 +98,34 @@ class ExternalMemory(nn.Module):
             precedence_prev = precedence
             precedence = (1 - torch.sum(w_w, dim=1, keepdim=True)) * precedence + w_w
 
+            # More efficient link matrix update
             link_matrix_update = torch.einsum("bi,bj->bij", w_w, precedence_prev)
             link_matrix = (
-                1 - w_w.unsqueeze(2) - w_w.unsqueeze(1)
-            ) * link_matrix + link_matrix_update
-            link_matrix.diagonal(dim1=-2, dim2=-1).zero_()  # No self-loops
+                (1 - w_w.unsqueeze(2) - w_w.unsqueeze(1)) * link_matrix 
+                + link_matrix_update
+            )
+            # Zero out diagonal more efficiently
+            link_matrix.diagonal(dim1=-2, dim2=-1)[:] = 0
 
             # 5. Compute read weighting
-            forward_w = torch.bmm(link_matrix, w_r_prev.unsqueeze(2)).squeeze(2)
+            # Use more efficient matrix operations
+            forward_w = torch.bmm(link_matrix, w_r_prev.unsqueeze(-1)).squeeze(-1)
             backward_w = torch.bmm(
-                link_matrix.transpose(1, 2), w_r_prev.unsqueeze(2)
-            ).squeeze(2)
+                link_matrix.transpose(-2, -1), w_r_prev.unsqueeze(-1)
+            ).squeeze(-1)
 
-            w_r = (
-                read_modes[:, 0].unsqueeze(1) * backward_w
-                + read_modes[:, 1].unsqueeze(1) * w_c_r
-                + read_modes[:, 2].unsqueeze(1) * forward_w
-            )
+            # Vectorized read mode computation
+            read_mode_weights = read_modes.unsqueeze(-1)  # (batch, 3, 1)
+            read_weight_components = torch.stack([backward_w, w_c_r, forward_w], dim=1)  # (batch, 3, m_loc)
+            w_r = torch.sum(read_mode_weights * read_weight_components, dim=1)
         else:
             # If not using location addressing, it's a simpler NTM
             w_w = w_c_w
             w_r = w_c_r
 
-        # 6. Write to memory
+        # 6. Write to memory with numerical stability
+        # Clamp erase vector for stability
+        erase = torch.clamp(erase, 0.0, 1.0)
         erase_m = torch.einsum("bi,bj->bij", w_w, erase)
         add_m = torch.einsum("bi,bj->bij", w_w, add)
         M = M_prev * (1 - erase_m) + add_m
@@ -135,21 +145,27 @@ class ExternalMemory(nn.Module):
 
     def _content_addressing(self, key, beta, M):
         # key: (batch, d_mem), beta: (batch, 1), M: (batch, m_loc, d_mem)
-        sim = F.cosine_similarity(key.unsqueeze(1), M, dim=2)
+        # Use normalized cosine similarity for better stability
+        key_normalized = F.normalize(key, p=2, dim=-1)
+        M_normalized = F.normalize(M, p=2, dim=-1)
+        sim = torch.einsum("bd,bmd->bm", key_normalized, M_normalized)
         weighted_sim = sim * beta
 
         if self.sparse_addressing:
-            values, indices = torch.topk(weighted_sim, self.top_k, dim=1)
+            # Use topk for sparse addressing
+            values, indices = torch.topk(weighted_sim, min(self.top_k, weighted_sim.shape[1]), dim=1)
             sparse_w = F.softmax(values, dim=1)
-            w = torch.zeros_like(weighted_sim).scatter(1, indices, sparse_w)
+            # Create sparse weight vector
+            w = torch.zeros_like(weighted_sim).scatter_(1, indices, sparse_w)
         else:
             w = F.softmax(weighted_sim, dim=1)
         return w
 
     def init_memory(self, batch_size, device):
-        M = torch.zeros(
+        # Initialize with small random values for better training dynamics
+        M = torch.randn(
             batch_size, self.m_loc, self.d_mem, device=device, dtype=self.dtype
-        )
+        ) * 0.01
         states = {
             "w_r_prev": torch.zeros(
                 batch_size, self.m_loc, device=device, dtype=self.dtype

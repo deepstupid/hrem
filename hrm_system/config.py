@@ -33,6 +33,8 @@ class ModelConfig(BaseModel):
     base_arch_config: str = Field("hrem_v1", description="Base architecture config file name (e.g., 'hrem_v1').")
     hrem_params: Optional[HREMParams] = Field(default_factory=HREMParams, description="HREM-specific hyperparameters.")
     arch_overrides: Dict[str, Any] = Field(default_factory=dict, description="Architecture overrides from the command line.")
+    training_config_name: Optional[str] = Field(None, description="The name of the training configuration file.")
+    training_config: Optional['TrainingConfig'] = Field(None, exclude=True, description="The loaded training configuration.")
 
 class TrainingConfig(BaseModel):
     """Configuration for the training process."""

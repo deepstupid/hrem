@@ -81,9 +81,8 @@ def evaluate(dataset, num_aug, n_runs, smoke_test, study_name, models, arch_over
         eval_config_dict[f"model_{chr(ord('a') + i)}"] = model_config
     eval_config = EvaluationConfig(**eval_config_dict)
 
+    # A base training config can be provided for the experiment
     training_config = TrainingConfig()
-    if "EnhancedHREM" in models:
-        training_config = TrainingConfig(optimizer="AdamW", optimizer_eps=1e-5, lr=3e-4, puzzle_emb_lr=3e-3, weight_decay=0.01, global_batch_size=1024, eval_interval=5000)
 
     config = ExperimentConfig(
         mode="evaluate",
@@ -269,6 +268,12 @@ def demo(dataset, num_aug, n_trials, n_jobs, n_final_runs, smoke_test, study_nam
 
     console.print(Panel("[bold green]Demo Finished![/bold green]", expand=False))
 
+
+@cli.command()
+def tui():
+    """Launch the Textual User Interface."""
+    from tui.main import main as tui_main
+    tui_main()
 
 if __name__ == "__main__":
     cli()

@@ -3,10 +3,12 @@ import yaml
 from typing import Dict, List, Any, Optional
 from hrm_system.config import ModelConfig
 
+from hrm_system.config import TrainingConfig
+
 class ModelRegistry:
     """Registry for available models, loaded from YAML configuration."""
 
-    def __init__(self, models_dir="config/models", search_dir="config/search"):
+    def __init__(self, models_dir="config/models", search_dir="config/search", training_dir="config/training"):
         """Initialize the model registry by loading configurations from YAML files."""
         self._models: Dict[str, ModelConfig] = {}
         self._search_spaces: Dict[str, Dict[str, Any]] = {}
@@ -28,9 +30,18 @@ class ModelRegistry:
                 model_config = ModelConfig(
                     name=model_name,
                     algorithm_class=model_data["algorithm_class"],
-                    base_arch_config=model_data["base_arch_config"]
+                    base_arch_config=model_data["base_arch_config"],
+                    training_config_name=model_data.get("training_config_name")
                 )
                 self._models[model_name] = model_config
+
+                # Load training config if specified
+                if model_config.training_config_name:
+                    training_config_path = os.path.join(training_dir, f"{model_config.training_config_name}.yaml")
+                    if os.path.exists(training_config_path):
+                        with open(training_config_path, 'r') as tc_f:
+                            training_data = yaml.safe_load(tc_f)
+                            model_config.training_config = TrainingConfig(**training_data)
 
                 # Load search space if specified
                 if "search_space_config" in model_data:

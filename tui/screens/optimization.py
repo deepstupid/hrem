@@ -1,3 +1,4 @@
+from typing import Any
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static, Select, Input, Button, Checkbox, RichLog

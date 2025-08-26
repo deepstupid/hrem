@@ -1,4 +1,4 @@
-# Enhanced HREM training config with improved performance parameters
+# EnhancedHREM training config with improved performance parameters
 
 defaults:
   - arch: enhanced_hrem_v1

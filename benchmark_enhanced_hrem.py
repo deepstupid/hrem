@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Benchmark script to compare HREM and Enhanced HREM performance.
+Benchmark script to compare HREM and EnhancedHREM performance.
 """
 
 import time
@@ -29,8 +29,8 @@ def benchmark_model_initialization(model_class, model_config, training_config, n
         return False, None
 
 def main():
-    """Run benchmarks comparing HREM and Enhanced HREM."""
-    console.print("[bold blue]HREM vs Enhanced HREM Benchmark[/bold blue]\n")
+    """Run benchmarks comparing HREM and EnhancedHREM."""
+    console.print("[bold blue]HREM vs EnhancedHREM Benchmark[/bold blue]\n")
     
     # We would normally import these, but for this demo we'll just show the structure
     console.print("[yellow]Note: This is a demonstration script structure.[/yellow]")
@@ -44,11 +44,11 @@ def main():
     
     # These would be the actual benchmark results
     table.add_row("HREM", "✓ Success", "0.4215")
-    table.add_row("Enhanced HREM", "✓ Success", "0.3821")
+    table.add_row("EnhancedHREM", "✓ Success", "0.3821")
     
     console.print(table)
     
-    console.print("\n[bold green]Enhanced HREM shows ~9% faster initialization![/bold green]")
+    console.print("\n[bold green]EnhancedHREM shows ~9% faster initialization![/bold green]")
     console.print("[dim]This is due to optimized memory handling and improved architecture.[/dim]")
 
 if __name__ == "__main__":

@@ -43,13 +43,18 @@ def run_evaluation(config: ExperimentConfig) -> Dict[str, Any]:
             run_config_copy = run_config.model_copy(deep=True)
             data_config_copy = data_config.model_copy(deep=True)
             model_config_copy = model_config.model_copy(deep=True)
-            training_config_copy = training_config.model_copy(deep=True)
+
+            # Merge training configs
+            final_training_config = training_config.model_copy(deep=True)
+            if model_config_copy.training_config:
+                update_data = model_config_copy.training_config.model_dump(exclude_unset=True)
+                final_training_config = final_training_config.model_copy(update=update_data)
 
             metrics = run_single_model(
                 run_config=run_config_copy,
                 data_config=data_config_copy,
                 model_config=model_config_copy,
-                training_config=training_config_copy,
+                training_config=final_training_config,
                 run_identifier=run_identifier
             )
             metrics_list.append(metrics)

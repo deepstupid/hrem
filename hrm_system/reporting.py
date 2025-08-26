@@ -2,8 +2,15 @@ from pathlib import Path
 from typing import List, Dict, Any
 import pandas as pd
 
-from .config import EvaluationConfig, OptimizationConfig, RunConfig
+from .config import EvaluationConfig, OptimizationConfig, RunConfig, HREMParams
 import optuna
+from scipy.stats import ttest_ind
+from rich.console import Console
+from rich.table import Table
+from rich import box
+from rich.panel import Panel
+
+console = Console()
 
 # Define priority metrics as a constant for single source of truth
 PRIORITY_METRICS = [
@@ -52,7 +59,62 @@ def aggregate_metrics(metrics_list: List[Dict[str, Any]]) -> Dict[str, str]:
     return result
 
 
-from scientific_reporting import ScientificReporter
+def calculate_statistical_significance(raw_results: Dict[str, List[Dict[str, Any]]], metric: str = 'all/accuracy') -> Dict[str, Dict[str, float]]:
+    """Calculates statistical significance (p-value) between models."""
+    model_names = list(raw_results.keys())
+    p_values: Dict[str, Dict[str, float]] = {}
+    for i in range(len(model_names)):
+        for j in range(i + 1, len(model_names)):
+            model_a, model_b = model_names[i], model_names[j]
+            try:
+                metrics_a = [pd.json_normalize(run, sep='/').to_dict(orient='records')[0][metric] for run in raw_results[model_a]]
+                metrics_b = [pd.json_normalize(run, sep='/').to_dict(orient='records')[0][metric] for run in raw_results[model_b]]
+            except KeyError:
+                continue
+            if len(metrics_a) < 2 or len(metrics_b) < 2:
+                continue
+            _, p_value = ttest_ind(metrics_a, metrics_b, equal_var=False, nan_policy='omit')
+            if model_a not in p_values: p_values[model_a] = {}
+            if model_b not in p_values: p_values[model_b] = {}
+            p_values[model_a][model_b] = p_value
+            p_values[model_b][model_a] = p_value
+    return p_values
+
+
+def display_scientific_analysis(final_results: Dict[str, Dict[str, Any]], raw_results: Dict[str, List[Dict[str, Any]]]):
+    """Displays a comprehensive scientific analysis of the results."""
+    console.print(Panel("[bold blue]🔬 Scientific Analysis[/bold blue]", expand=False))
+    model_names = list(final_results.keys())
+    if not model_names: return
+
+    accuracies = {name: float(final_results[name].get('all/accuracy', '0').split('±')[0].strip()) for name in model_names}
+    param_counts = {name: int(float(str(final_results[name].get('num_params', '0')).replace(',', ''))) for name in model_names}
+
+    if accuracies:
+        best_model = max(accuracies, key=accuracies.get)
+        console.print(f"🏆 Best performing model: {best_model} (Accuracy: {accuracies[best_model]:.4f})")
+    if param_counts:
+        most_efficient = min(param_counts, key=param_counts.get)
+        console.print(f"⚙️  Most parameter-efficient model: {most_efficient} ({param_counts[most_efficient]:,} parameters)")
+
+    p_values = calculate_statistical_significance(raw_results, metric='all/accuracy')
+    if p_values:
+        sig_table = Table(title="Statistical Significance (p-value for Accuracy)", box=box.ROUNDED)
+        sig_table.add_column("Model A", style="cyan")
+        sig_table.add_column("vs", style="dim")
+        sig_table.add_column("Model B", style="cyan")
+        sig_table.add_column("p-value", style="bold")
+        sig_table.add_column("Significant (p < 0.05)", style="bold")
+        added_comparisons = set()
+        for model_a, comparisons in p_values.items():
+            for model_b, p_value in comparisons.items():
+                comparison_key = tuple(sorted([model_a, model_b]))
+                if comparison_key in added_comparisons: continue
+                added_comparisons.add(comparison_key)
+                is_significant = p_value < 0.05
+                sig_table.add_row(model_a, "vs", model_b, f"{p_value:.4f}", "[bold green]Yes[/bold green]" if is_significant else "[dim]No[/dim]")
+        console.print(sig_table)
+
 
 def generate_evaluation_report(
     all_metrics: Dict[str, Dict[str, str]],
@@ -64,7 +126,7 @@ def generate_evaluation_report(
     Generates a Markdown comparison report and displays scientific analysis.
     """
     # Display scientific analysis in the console
-    ScientificReporter.display_scientific_analysis(
+    display_scientific_analysis(
         final_results=all_metrics,
         raw_results=raw_metrics_by_model
     )
@@ -163,6 +225,49 @@ def generate_evaluation_report(
 
     return str(report_path)
 
+
+def display_final_comparison(title: str, final_results: Dict[str, Any]):
+    """Displays a clear comparison of final results."""
+    console.print(Panel(f"[bold]{title}[/bold]", expand=False))
+    model_names = sorted(list(final_results.keys()))
+    if not model_names:
+        console.print("[dim]No models to compare[/dim]")
+        return
+
+    table = Table(box=box.ROUNDED)
+    table.add_column("Metric", style="cyan")
+    for name in model_names:
+        table.add_column(name.replace('_best', ' (Opt)'), justify="right", style=f"bold {'bright_green' if '_best' in name else 'green'}")
+
+    key_metrics = [('all/accuracy', 'Accuracy'), ('all/lm_loss', 'Loss'), ('num_params', 'Parameters')]
+    for key, display_name in key_metrics:
+        row_values = [str(final_results.get(name, {}).get(key, 'N/A')) for name in model_names]
+        table.add_row(display_name, *row_values)
+    console.print(table)
+
+def display_hrem_params(title: str, params: "HREMParams"):
+    """Displays HREM parameters in a table."""
+    if not params: return
+    table = Table(title=title, box=box.ROUNDED)
+    table.add_column("Parameter", style="dim")
+    table.add_column("Value", justify="right")
+    for key, value in params.model_dump().items():
+        table.add_row(key, str(value))
+    console.print(table)
+
+def display_optimization_results(model_name: str, opt_result: Dict[str, Any]):
+    """Displays optimization results for a single model."""
+    if opt_result and "best_params" in opt_result:
+        console.print(f"\n[bold blue]{model_name} Optimization Results:[/bold blue]")
+        table = Table(box=box.ROUNDED)
+        table.add_column("Parameter", style="dim")
+        table.add_column("Value", justify="right")
+        for key, value in opt_result["best_params"].items():
+            table.add_row(key, str(value))
+        console.print(table)
+    else:
+        console.print(f"\n[bold blue]{model_name} Optimization Results:[/bold blue]")
+        console.print("  No optimization parameters found")
 
 def generate_optimization_report(
     final_metrics: Dict[str, Dict[str, str]],

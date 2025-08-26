@@ -53,6 +53,10 @@ class TrainingConfig(BaseModel):
     checkpoint_every_eval: bool = False
     eval_save_outputs: List[str] = Field(default_factory=list)
     smoke_test: bool = False
+    num_workers: int = Field(1, description="Number of workers for the dataloader.")
+    prefetch_factor: int = Field(8, description="Prefetch factor for the dataloader.")
+    lr_schedule: Literal["cosine", "linear"] = Field("cosine", description="Learning rate schedule.")
+    use_amp: bool = Field(False, description="Whether to use Automatic Mixed Precision.")
 
 class EvaluationConfig(BaseModel):
     """Configuration for the evaluation mode."""

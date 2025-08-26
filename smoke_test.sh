@@ -15,19 +15,10 @@ DATA_PATH="data/synthetic-smoke"
 
 # --- HRM Training ---
 echo "Training HRM..."
-HRM_CHECKPOINT_PATH="checkpoints/smoke_test/HRM"
-HRM_LOG_PATH="smoke_test_hrm_metrics.json"
-
-# The new way of running the smoke test, using the refactored runner.
-python run_smoke_test.py \
-    --data_path $DATA_PATH \
-    --arch hrm_v1 \
-    --global_batch_size 1 \
-    --epochs 1 \
-    --eval_interval 1 \
-    --checkpoint_path $HRM_CHECKPOINT_PATH \
-    --log_path $HRM_LOG_PATH \
-    --smoke_test \
-    --arch_overrides '{"forward_dtype": "float32", "hidden_size": 16, "H_layers": 1, "L_layers": 1, "puzzle_emb_ndim": 16}'
+python run.py evaluate \
+    --dataset synthetic \
+    --models HRM \
+    --smoke-test \
+    --arch-overrides '{"forward_dtype": "float32", "hidden_size": 16, "H_layers": 1, "L_layers": 1, "puzzle_emb_ndim": 16}'
 
 echo "Smoke test completed successfully."

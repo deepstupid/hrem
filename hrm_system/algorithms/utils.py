@@ -10,7 +10,7 @@ import torch
 import torch.distributed as dist
 import yaml
 from torch import nn
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 from torch.utils.data import DataLoader
 
 from hrm_system.config import ModelConfig, TrainingConfig
@@ -52,6 +52,8 @@ class TrainState:
     carry: Any
     step: int
     total_steps: int
+    scaler: Optional[torch.cuda.amp.GradScaler] = None
+
 
 def create_dataloader(training_config: TrainingConfig, data_path: str, split: str, rank: int, world_size: int, **kwargs):
     dataset = PuzzleDataset(PuzzleDatasetConfig(
@@ -64,8 +66,8 @@ def create_dataloader(training_config: TrainingConfig, data_path: str, split: st
     dataloader = DataLoader(
         dataset,
         batch_size=None,
-        num_workers=1,
-        prefetch_factor=8,
+        num_workers=training_config.num_workers,
+        prefetch_factor=training_config.prefetch_factor,
         pin_memory=True,
         persistent_workers=True
     )
@@ -81,15 +83,34 @@ def cosine_schedule_with_warmup_lr_lambda(
     progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
     return base_lr * (min_ratio + max(0.0, (1 - min_ratio) * 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress))))
 
+def linear_schedule_with_warmup_lr_lambda(
+    current_step: int, *, base_lr: float, num_warmup_steps: int, num_training_steps: int, min_ratio: float = 0.0
+):
+    """Linear decay schedule which can be more stable than cosine for some tasks."""
+    if current_step < num_warmup_steps:
+        return base_lr * float(current_step) / float(max(1, num_warmup_steps))
+
+    progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+    return base_lr * (1.0 - progress * (1.0 - min_ratio))
+
 
 def compute_lr(base_lr: float, training_config: TrainingConfig, train_state: TrainState):
-    return cosine_schedule_with_warmup_lr_lambda(
-        current_step=train_state.step,
-        base_lr=base_lr,
-        num_warmup_steps=round(training_config.lr_warmup_steps),
-        num_training_steps=train_state.total_steps,
-        min_ratio=training_config.lr_min_ratio
-    )
+    if training_config.lr_schedule == "linear":
+        return linear_schedule_with_warmup_lr_lambda(
+            current_step=train_state.step,
+            base_lr=base_lr,
+            num_warmup_steps=round(training_config.lr_warmup_steps),
+            num_training_steps=train_state.total_steps,
+            min_ratio=training_config.lr_min_ratio
+        )
+    else:  # default to cosine
+        return cosine_schedule_with_warmup_lr_lambda(
+            current_step=train_state.step,
+            base_lr=base_lr,
+            num_warmup_steps=round(training_config.lr_warmup_steps),
+            num_training_steps=train_state.total_steps,
+            min_ratio=training_config.lr_min_ratio
+        )
 
 
 def train_batch(training_config: TrainingConfig, train_state: TrainState, batch: Any, global_batch_size: int, rank: int, world_size: int):
@@ -104,10 +125,27 @@ def train_batch(training_config: TrainingConfig, train_state: TrainState, batch:
         with torch.device(device):
             train_state.carry = train_state.model.initial_carry(batch)
 
-    new_carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+    # Enable gradient scaling for mixed precision training
+    use_amp = training_config.use_amp and device.type == "cuda"
+    if use_amp and train_state.scaler is None:
+        train_state.scaler = torch.cuda.amp.GradScaler()
+
+    scaler = train_state.scaler
+
+    # Forward pass with optional AMP
+    if use_amp:
+        with torch.cuda.amp.autocast():
+            new_carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+    else:
+        new_carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+
     train_state.carry = new_carry
 
-    ((1 / global_batch_size) * loss).backward()
+    # Backward pass with optional AMP
+    if use_amp and scaler is not None:
+        scaler.scale((1 / global_batch_size) * loss).backward()
+    else:
+        ((1 / global_batch_size) * loss).backward()
 
     if world_size > 1:
         for param in train_state.model.parameters():
@@ -121,7 +159,12 @@ def train_batch(training_config: TrainingConfig, train_state: TrainState, batch:
         for param_group in optim.param_groups:
             param_group['lr'] = lr_this_step
 
-        optim.step()
+        # Optimizer step with optional AMP
+        if use_amp and scaler is not None:
+            scaler.step(optim)
+            scaler.update()
+        else:
+            optim.step()
         optim.zero_grad()
 
     if len(metrics):

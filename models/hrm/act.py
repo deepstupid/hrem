@@ -1,110 +1,19 @@
 from typing import Tuple, List, Dict, Optional
-from dataclasses import dataclass
 import math
 
 import torch
 import torch.nn.functional as F
 from torch import nn
-from pydantic import BaseModel
 
 from models.common import trunc_normal_init_
-from models.layers import rms_norm, SwiGLU, Attention, RotaryEmbedding, CosSin, CastedEmbedding, CastedLinear
+from models.layers import RotaryEmbedding, CosSin, CastedEmbedding, CastedLinear
 from models.sparse_embedding import CastedSparseEmbedding
-
-
-@dataclass
-class HierarchicalReasoningModel_ACTV1InnerCarry:
-    z_H: torch.Tensor
-    z_L: torch.Tensor
-
-
-@dataclass
-class HierarchicalReasoningModel_ACTV1Carry:
-    inner_carry: HierarchicalReasoningModel_ACTV1InnerCarry
-    
-    steps: torch.Tensor
-    halted: torch.Tensor
-    
-    current_data: Dict[str, torch.Tensor]
-
-
-class HierarchicalReasoningModel_ACTV1Config(BaseModel):
-    batch_size: int
-    seq_len: int
-    puzzle_emb_ndim: int = 0
-    num_puzzle_identifiers: int
-    vocab_size: int
-
-    H_cycles: int
-    L_cycles: int
-
-    H_layers: int
-    L_layers: int
-
-    # Transformer config
-    hidden_size: int
-    expansion: float
-    num_heads: int
-    pos_encodings: str
-
-    rms_norm_eps: float = 1e-5
-    rope_theta: float = 10000.0
-    
-    # Halting Q-learning config
-    halt_max_steps: int
-    halt_exploration_prob: float
-
-    forward_dtype: str = "bfloat16"
-
-    # HREM
-    use_memory: bool = False
-    m_loc: int = 128
-    d_mem: int = 128
-    top_k: int = 4
-    sparse_addressing: bool = True
-    use_location_addressing: bool = True
-
-
-class HierarchicalReasoningModel_ACTV1Block(nn.Module):
-    def __init__(self, config: HierarchicalReasoningModel_ACTV1Config) -> None:
-        super().__init__()
-
-        self.self_attn = Attention(
-            hidden_size=config.hidden_size,
-            head_dim=config.hidden_size // config.num_heads,
-            num_heads=config.num_heads,
-            num_key_value_heads=config.num_heads,
-            causal=False
-        )
-        self.mlp = SwiGLU(
-            hidden_size=config.hidden_size,
-            expansion=config.expansion,
-        )
-        self.norm_eps = config.rms_norm_eps
-
-    def forward(self, cos_sin: CosSin, hidden_states: torch.Tensor) -> torch.Tensor:
-        # Post Norm
-        # Self Attention
-        hidden_states = rms_norm(hidden_states + self.self_attn(cos_sin=cos_sin, hidden_states=hidden_states), variance_epsilon=self.norm_eps)
-        # Fully Connected
-        hidden_states = rms_norm(hidden_states + self.mlp(hidden_states), variance_epsilon=self.norm_eps)
-        return hidden_states
-
-
-class HierarchicalReasoningModel_ACTV1ReasoningModule(nn.Module):
-    def __init__(self, layers: List[HierarchicalReasoningModel_ACTV1Block]):
-        super().__init__()
-
-        self.layers = torch.nn.ModuleList(layers)
-
-    def forward(self, hidden_states: torch.Tensor, input_injection: torch.Tensor, **kwargs) -> torch.Tensor:
-        # Input injection (add)
-        hidden_states = hidden_states + input_injection
-        # Layers
-        for layer in self.layers:
-            hidden_states = layer(hidden_states=hidden_states, **kwargs)
-
-        return hidden_states
+from models.hrm.common import (
+    HierarchicalReasoningModel_ACTV1InnerCarry,
+    HierarchicalReasoningModel_ACTV1Carry,
+    HierarchicalReasoningModel_ACTV1Config,
+)
+from models.hrm.reasoning_block import HierarchicalReasoningModel_ACTV1Block, HierarchicalReasoningModel_ACTV1ReasoningModule
 
 
 class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
@@ -138,8 +47,22 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
             raise NotImplementedError()
 
         # Reasoning Layers
-        self.H_level = HierarchicalReasoningModel_ACTV1ReasoningModule(layers=[HierarchicalReasoningModel_ACTV1Block(self.config) for _i in range(self.config.H_layers)])
-        self.L_level = HierarchicalReasoningModel_ACTV1ReasoningModule(layers=[HierarchicalReasoningModel_ACTV1Block(self.config) for _i in range(self.config.L_layers)])
+        self.H_level = HierarchicalReasoningModel_ACTV1ReasoningModule(layers=[
+            HierarchicalReasoningModel_ACTV1Block(
+                hidden_size=self.config.hidden_size,
+                expansion=self.config.expansion,
+                num_heads=self.config.num_heads,
+                rms_norm_eps=self.config.rms_norm_eps,
+            ) for _i in range(self.config.H_layers)
+        ])
+        self.L_level = HierarchicalReasoningModel_ACTV1ReasoningModule(layers=[
+            HierarchicalReasoningModel_ACTV1Block(
+                hidden_size=self.config.hidden_size,
+                expansion=self.config.expansion,
+                num_heads=self.config.num_heads,
+                rms_norm_eps=self.config.rms_norm_eps,
+            ) for _i in range(self.config.L_layers)
+        ])
         
         # Initial states
         self.register_buffer('H_init', trunc_normal_init_(torch.empty(self.config.hidden_size, dtype=self.forward_dtype), std=1), persistent=True)

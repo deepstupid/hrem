@@ -1,5 +1,5 @@
 import torch
-from models.hrm.hrm_act_v1 import HierarchicalReasoningModel_ACTV1
+from models.hrm.act import HierarchicalReasoningModel_ACTV1
 
 def test_hrm_without_memory():
     """Test that HRM works correctly without memory."""

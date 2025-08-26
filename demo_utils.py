@@ -7,8 +7,8 @@ from rich import box
 from rich.panel import Panel
 from hrm_system.config import HREMParams
 
-# Import centralized parameters
-from demo_parameters import DISPLAY_COLORS, METRICS_INFO, KEY_METRICS
+# No longer importing from demo_parameters
+# from demo_parameters import DISPLAY_COLORS, METRICS_INFO, KEY_METRICS
 
 console = Console()
 
@@ -19,7 +19,6 @@ class DemoLogger:
         
     def log(self, message: str):
         """Log a message and display it."""
-        # Filter out progress bar updates and warning messages to reduce verbosity
         if ("it/s" not in message and "%" not in message and 
             "TensorFloat32" not in message and "Online softmax" not in message and
             "torch._prims_common.check" not in message and
@@ -28,158 +27,105 @@ class DemoLogger:
             self.messages.append(message)
 
 class ResultsDisplay:
-    """Handles displaying results in various formats."""
+    """Handles displaying results in various formats, using a config object."""
     
-    @staticmethod
-    def _create_results_table(title: str, model_names: List[str], model_styles: Dict[str, str]) -> Table:
+    def __init__(self, ui_config: Dict[str, Any]):
+        """Initialize with the UI configuration."""
+        self.ui_config = ui_config
+        self.colors = ui_config.get("display_colors", ["blue", "green", "yellow", "magenta", "cyan", "red"])
+        self.metrics_info = ui_config.get("metrics_info", [])
+        self.key_metrics = ui_config.get("key_metrics", [])
+
+    def _create_results_table(self, title: str, model_names: List[str], model_styles: Dict[str, str]) -> Table:
         """Create a standardized results table with proper styling."""
         table = Table(title=title, show_header=True, header_style="bold magenta", box=box.ROUNDED)
         table.add_column("Metric", style="cyan")
         
-        # Add columns for each model
         for model_name in model_names:
             style = model_styles.get(model_name, "bold white")
             table.add_column(model_name, justify="right", style=style)
         
         return table
     
-    @staticmethod
-    def _format_metric_value(val, key):
+    def _format_metric_value(self, val, key):
         """Format metric values for display."""
-        # Handle NaN values explicitly
-        if isinstance(val, float) and (val != val):  # NaN check
+        if isinstance(val, float) and (val != val):
             return "N/A"
         if isinstance(val, (int, float)):
             if key == 'num_params':
-                return f"{val:,}"  # Add commas for large numbers
+                return f"{val:,}"
             else:
                 return f"{val:.4f}"
         return str(val)
     
-    @staticmethod
-    def display_model_detailed_stats(title: str, results: Dict[str, Any], model_names: list = None):
-        """Display detailed statistics for models including parameter counts and performance metrics."""
+    def display_model_detailed_stats(self, title: str, results: Dict[str, Any], model_names: list = None):
+        """Display detailed statistics for models."""
         if not model_names:
-            # Determine which models are present in the results
             model_names = list(results.keys())
-        
         if not model_names:
             return
             
-        # Create table with consistent styling
-        # Dynamically generate styles based on model names
         model_styles = {}
-        colors = DISPLAY_COLORS
         for i, model_name in enumerate(model_names):
-            color = colors[i % len(colors)]
-            if "_best" in model_name:
-                model_styles[model_name] = f"bold bright_{color}"
-            else:
-                model_styles[model_name] = f"bold {color}"
+            color = self.colors[i % len(self.colors)]
+            model_styles[model_name] = f"bold {'bright_' if '_best' in model_name else ''}{color}"
                 
-        table = ResultsDisplay._create_results_table(title, model_names, model_styles)
+        table = self._create_results_table(title, model_names, model_styles)
         
         if results:
-            # Get metrics for available models
-            model_metrics = {}
-            for model_name in model_names:
-                if model_name in results:
-                    model_metrics[model_name] = results.get(model_name, {})
+            model_metrics = {name: results.get(name, {}) for name in model_names}
             
-            # Common metrics to display with descriptions
-            metrics_info = METRICS_INFO
-            
-            for key, display_name, description in metrics_info:
-                # Check if any model has this metric
-                has_metric = any(model_metrics[model_name].get(key, 'N/A') != 'N/A' for model_name in model_metrics)
-                if not has_metric:
+            for key, display_name, description in self.metrics_info:
+                if not any(model_metrics[name].get(key, 'N/A') != 'N/A' for name in model_metrics):
                     continue
                     
-                row_values = []
-                for model_name in model_names:
-                    if model_name in model_metrics:
-                        val = model_metrics[model_name].get(key, 'N/A')
-                        # Format values
-                        row_values.append(ResultsDisplay._format_metric_value(val, key))
-                    else:
-                        row_values.append('N/A')
-                
+                row_values = [self._format_metric_value(model_metrics.get(name, {}).get(key, 'N/A'), key) for name in model_names]
                 table.add_row(display_name, *row_values)
                 
             console.print(table)
     
-    @staticmethod
-    def display_final_comparison(title: str, final_results: Dict[str, Any]):
+    def display_final_comparison(self, title: str, final_results: Dict[str, Any]):
         """Display a clear comparison of final results for all models."""
         console.print(Panel(f"[bold]{title}[/bold]", expand=False))
         
-        # Get all model names from final results
-        model_names = list(final_results.keys())
-        
+        model_names = sorted(list(final_results.keys()))
         if not model_names:
             console.print("[dim]No models to compare[/dim]")
             return
             
-        # Create comparison table
-        # Dynamically generate styles based on model names
-        model_styles = {}
-        colors = DISPLAY_COLORS
-        for i, model_name in enumerate(model_names):
-            color = colors[i % len(colors)]
-            if "_best" in model_name:
-                model_styles[model_name] = f"bold bright_{color}"
-            else:
-                model_styles[model_name] = f"bold {color}"
-                
-        table = ResultsDisplay._create_results_table("", sorted(model_names), model_styles)
+        model_styles = {name: f"bold {'bright_' if '_best' in name else ''}{self.colors[i % len(self.colors)]}" for i, name in enumerate(model_names)}
+        table = self._create_results_table("", model_names, model_styles)
         
-        # Add columns for each model with custom display names
-        table.columns[0].header = "Metric"  # Reset first column header
-        
-        # Update column headers with styled names
-        for i, model_name in enumerate(sorted(model_names), 1):  # Start from 1 because first column is Metric
-            base_style = model_styles.get(model_name, "white")
-            # Remove '_best' suffix for cleaner display
+        table.columns[0].header = "Metric"
+        for i, model_name in enumerate(model_names, 1):
             display_name = model_name.replace('_best', '') + (' (Optimized)' if '_best' in model_name else '')
             table.columns[i]._header = display_name
-            table.columns[i].style = base_style
+            table.columns[i].style = model_styles.get(model_name, "white")
             table.columns[i].justify = "right"
         
-        # Key metrics for comparison
-        metrics_info = KEY_METRICS
-        
-        for key, display_name in metrics_info:
-            row_values = []
-            for model_name in sorted(model_names):
-                val = final_results.get(model_name, {}).get(key, 'N/A')
-                row_values.append(ResultsDisplay._format_value(val, key))
-            
+        for key, display_name in self.key_metrics:
+            row_values = [self._format_value(final_results.get(name, {}).get(key, 'N/A'), key) for name in model_names]
             table.add_row(display_name, *row_values)
         
         console.print(table)
     
-    @staticmethod
-    def _format_value(val, key):
+    def _format_value(self, val, key):
         """Helper method to format values for display."""
-        # Handle NaN values explicitly
-        if isinstance(val, float) and (val != val):  # NaN check
+        if isinstance(val, float) and (val != val):
             return "N/A"
         if isinstance(val, (int, float)):
             if key == 'num_params':
-                return f"{val:,}"  # Add commas for large numbers
+                return f"{val:,}"
             else:
                 return f"{val:.4f}"
         return str(val)
     
-    @staticmethod
-    def display_current_leader(results: Dict[str, Any]):
+    def display_current_leader(self, results: Dict[str, Any]):
         """Display the current leader with a colorful panel based on accuracy."""
         if not results:
             return
             
-        # Find the model with the highest accuracy
-        best_model = None
-        best_accuracy = -1
+        best_model, best_accuracy = None, -1
         for model_name, metrics in results.items():
             accuracy = metrics.get('all/accuracy', 0)
             try:
@@ -187,22 +133,18 @@ class ResultsDisplay:
             except (ValueError, TypeError):
                 continue
             if accuracy > best_accuracy:
-                best_accuracy = accuracy
-                best_model = model_name
+                best_accuracy, best_model = accuracy, model_name
         
         if best_model:
             console.print(f"\n[bold green]👑 Current Leader: {best_model}[/bold green]")
             console.print(f"[dim]Accuracy: {best_accuracy:.4f}[/dim]")
     
-    @staticmethod
-    def display_final_leader(final_results: Dict[str, Any]):
+    def display_final_leader(self, final_results: Dict[str, Any]):
         """Display the final leader based on accuracy."""
         if not final_results:
             return
             
-        # Find the model with the highest accuracy
-        best_model_final = None
-        best_accuracy_final = -1
+        best_model_final, best_accuracy_final = None, -1
         for model_name, metrics in final_results.items():
             accuracy = metrics.get('all/accuracy', 0)
             try:
@@ -210,15 +152,13 @@ class ResultsDisplay:
             except (ValueError, TypeError):
                 continue
             if accuracy > best_accuracy_final:
-                best_accuracy_final = accuracy
-                best_model_final = model_name
+                best_accuracy_final, best_model_final = accuracy, model_name
         
         if best_model_final:
             console.print(f"\n[bold green]🏆 Final Leader: {best_model_final}[/bold green]")
             console.print(f"[dim]Accuracy: {best_accuracy_final:.4f}[/dim]")
     
-    @staticmethod
-    def display_hrem_params(title: str, params: HREMParams):
+    def display_hrem_params(self, title: str, params: HREMParams):
         """Display HREM parameters in a formatted table."""
         if not params:
             return

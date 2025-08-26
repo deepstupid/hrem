@@ -14,10 +14,13 @@ import logging
 from typing import Dict, Any, Tuple, List, Optional
 from rich.console import Console
 from rich.table import Table
+import optuna
+import subprocess
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
 from rich import box
 from rich.prompt import Prompt
+from rich.live import Live
 
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -71,29 +74,25 @@ from demo_models import get_model_configs, list_available_models, get_all_model_
 # Import validation
 from demo_validation import ConfigValidator
 
-# Import parameters
-from demo_parameters import (
-    CHALLENGE_SELECTOR_PARAMS,
-    EXPERIMENT_RUNNER_PARAMS,
-    DEMO_DISPLAY_PARAMS,
-    STORAGE_PATHS,
-    DEFAULT_MODEL_NAMES
-)
+# No longer need to import from a separate parameters file
+# from demo_parameters import (...)
 
 console = Console()
 
 class ChallengeSelector:
-    """Handles challenge selection and display."""
+    """Handles challenge selection and display, using a config object."""
     
-    @staticmethod
-    def _display_challenge_list(challenges: List[Challenge]):
+    def __init__(self, ui_config: Dict[str, Any]):
+        self.ui_config = ui_config["challenge_selector"]
+
+    def _display_challenge_list(self, challenges: List[Challenge]):
         """Display the list of challenges grouped by difficulty."""
-        difficulty_display = CHALLENGE_SELECTOR_PARAMS["difficulty_display"]
-        hardware_icon = CHALLENGE_SELECTOR_PARAMS["hardware_icon"]
-        duration_icon = CHALLENGE_SELECTOR_PARAMS["duration_icon"]
+        difficulty_display = self.ui_config["difficulty_display"]
+        hardware_icon = self.ui_config["hardware_icon"]
+        duration_icon = self.ui_config["duration_icon"]
         
         console.clear()
-        console.print(Panel(CHALLENGE_SELECTOR_PARAMS["title"], expand=False))
+        console.print(Panel(self.ui_config["title"], expand=False))
         
         # Display challenges grouped by difficulty
         for difficulty in [ChallengeDifficulty.BEGINNER, ChallengeDifficulty.INTERMEDIATE, 
@@ -102,79 +101,74 @@ class ChallengeSelector:
             if difficulty_challenges:
                 console.print(f"\n[bold]{difficulty_display[difficulty.value.upper()]} Challenges:[/bold]")
                 for i, challenge in enumerate(difficulty_challenges, 1):
-                    # Find the global index
                     global_index = challenges.index(challenge) + 1
                     console.print(f"  {global_index:2d}. [cyan]{challenge.name}[/cyan]")
                     console.print(f"      [dim]{challenge.description}[/dim]")
                     console.print(f"      {hardware_icon}  {challenge.recommended_hardware} | {duration_icon}  {challenge.expected_duration}")
     
-    @staticmethod
-    def _get_user_selection(challenges: List[Challenge]) -> Challenge:
+    def _get_user_selection(self, challenges: List[Challenge]) -> Challenge:
         """Get user selection from the challenge list."""
         while True:
             try:
-                choice = Prompt.ask(CHALLENGE_SELECTOR_PARAMS["prompt"])
+                choice = Prompt.ask(self.ui_config["prompt"])
                 
-                # Try to parse as number first
                 if choice.isdigit():
                     index = int(choice) - 1
                     if 0 <= index < len(challenges):
                         return challenges[index]
                 
-                # Try to match by name
                 for challenge in challenges:
                     if challenge.name.lower() == choice.lower():
                         return challenge
                         
-                console.print(CHALLENGE_SELECTOR_PARAMS["invalid_selection"])
+                console.print(self.ui_config["invalid_selection"])
             except KeyboardInterrupt:
-                console.print(CHALLENGE_SELECTOR_PARAMS["exit_message"])
+                console.print(self.ui_config["exit_message"])
                 sys.exit(0)
     
-    @staticmethod
-    def display_challenge_menu() -> Challenge:
+    def display_challenge_menu(self) -> Challenge:
         """Display a menu for selecting a challenge and return the selected challenge."""
         challenges = get_all_challenges_sorted()
-        ChallengeSelector._display_challenge_list(challenges)
-        return ChallengeSelector._get_user_selection(challenges)
+        self._display_challenge_list(challenges)
+        return self._get_user_selection(challenges)
 
 class ExperimentRunner:
     """Handles running the different phases of the experiment."""
     
-    def __init__(self, demo_config):
+    def __init__(self, demo_config, results_displayer):
         self.config = demo_config
         self.logger = DemoLogger()
         self.metrics_collector = MetricsCollector()
-    
+        self.ui_config = demo_config.ui
+        self.results_displayer = results_displayer
+
     def _handle_dataset_error(self, e: Exception, data_config: DataConfig):
         """Handle dataset-related errors more gracefully."""
+        runner_ui = self.ui_config["experiment_runner"]
         if "No such file or directory" in str(e) and "raw-data" in str(e):
-            console.print(EXPERIMENT_RUNNER_PARAMS["dataset_not_found_title"])
-            console.print(EXPERIMENT_RUNNER_PARAMS["dataset_not_found_message"].format(dataset=data_config.dataset))
-            console.print(EXPERIMENT_RUNNER_PARAMS["dataset_not_found_instructions"])
-            console.print(EXPERIMENT_RUNNER_PARAMS["dataset_not_found_arc_instructions"])
+            console.print(runner_ui["dataset_not_found_title"])
+            console.print(runner_ui["dataset_not_found_message"].format(dataset=data_config.dataset))
+            console.print(runner_ui["dataset_not_found_instructions"])
+            console.print(runner_ui["dataset_not_found_arc_instructions"])
             raise SystemExit(1)
         else:
-            # Re-raise other exceptions
             raise e
     
     def run_hyperparameter_optimization_for_model(self, model_config: ModelConfig, study_name: str, data_config: DataConfig, 
                                             storage_path: str = None) -> Dict[str, Any]:
         """Run hyperparameter optimization for a single model."""
-        config_settings = self.config.experiment_settings
+        config_settings = self.config.settings
+        runner_ui = self.ui_config["experiment_runner"]
         
-        # Record timing
         start_time = self.metrics_collector.start_timer()
         
-        # Create optimization config using the factory
+        # Create optimization config using the factory - signature changed
         opt_config_dict = AlgorithmConfigFactory.create_optimization_config(
-            model_config.algorithm_class,
             model_config.name,
-            config_settings.opt_trials,
+            config_settings["opt_trials"],
             storage_path
         )
         
-        # Convert dict to OptimizationConfig object
         opt_config = OptimizationConfig(**opt_config_dict)
         
         config = ExperimentConfig(
@@ -186,18 +180,18 @@ class ExperimentRunner:
             ),
             data_config=data_config,
             training_config=TrainingConfig(
-                epochs=config_settings.opt_epochs, 
-                eval_interval=config_settings.opt_eval_interval
+                epochs=config_settings["opt_epochs"],
+                eval_interval=config_settings["opt_eval_interval"]
             ),
             optimization_config=opt_config
         )
         
-        spinner_description = EXPERIMENT_RUNNER_PARAMS["optimization_spinner"].format(model_name=model_config.name)
-        from demo_parameters import PROGRESS_SETTINGS
+        spinner_description = runner_ui["optimization_spinner"].format(model_name=model_config.name)
+        progress_settings = self.ui_config["progress_settings"]
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            transient=PROGRESS_SETTINGS["transient"],
+            transient=progress_settings["transient"],
         ) as progress:
             progress.add_task(description=spinner_description, total=None)
             try:
@@ -207,28 +201,136 @@ class ExperimentRunner:
         
         elapsed_time = self.metrics_collector.end_timer(start_time)
         self.metrics_collector.record_timing(f"optimization_{model_config.name}", elapsed_time)
-        completion_message = EXPERIMENT_RUNNER_PARAMS["optimization_completion"].format(model_name=model_config.name, elapsed_time=elapsed_time)
+        completion_message = runner_ui["optimization_completion"].format(model_name=model_config.name, elapsed_time=elapsed_time)
         console.print(f"[dim]{completion_message}[/dim]")
         
         return result
     
+    def _run_trial(self, trial: optuna.trial.Trial, model_config: ModelConfig, study_name: str, data_config: DataConfig) -> float:
+        """Execute a single trial for a given model."""
+        config_settings = self.config.settings
+
+        # Suggest hyperparameters from the model's specific search space
+        params = {}
+        model_search_space = self.config.models[model_config.name].get("search_space", {})
+
+        # The parameters can be under 'hrem_params' or 'hrm_params'
+        param_section_key = next(iter(model_search_space), None)
+        if not param_section_key:
+            # If no search space is defined for this model, we can't optimize it.
+            # This can be a valid case for baseline models not meant to be optimized.
+            return float('inf')
+
+        param_definitions = model_search_space[param_section_key]
+
+        for name, definition in param_definitions.items():
+            param_type = definition['type']
+            if self.config.mode == DemoMode.FAST:
+                if 'smoke_choices' in definition:
+                    params[name] = trial.suggest_categorical(name, definition['smoke_choices'])
+                elif 'smoke_low' in definition and 'smoke_high' in definition:
+                    params[name] = trial.suggest_int(name, definition['smoke_low'], definition['smoke_high'])
+                else: # Fallback for smoke mode if specific smoke params not defined
+                    params[name] = trial.suggest_categorical(name, definition['choices']) if param_type == 'categorical' else trial.suggest_int(name, definition['low'], definition['high'])
+            else:
+                if param_type == "categorical":
+                    params[name] = trial.suggest_categorical(name, definition['choices'])
+                elif param_type == "int":
+                    params[name] = trial.suggest_int(name, definition['low'], definition['high'])
+
+        # Create a temporary model config for this trial
+        trial_model_config = model_config.model_copy(deep=True)
+        if "hrem" in trial_model_config.algorithm_class.lower():
+            trial_model_config.hrem_params = HREMParams(**params)
+        else:
+            trial_model_config.arch_overrides = params
+
+        # Create a minimal experiment config for run_single_model
+        try:
+            metrics = run_single_model(
+                run_config=RunConfig(smoke_test=(self.config.mode == DemoMode.FAST)),
+                data_config=data_config,
+                model_config=trial_model_config,
+                training_config=TrainingConfig(
+                    epochs=config_settings["opt_epochs"],
+                    eval_interval=config_settings["opt_eval_interval"]
+                ),
+                run_identifier=f"trial_{trial.number}"
+            )
+            loss = metrics.get('all/lm_loss', float('inf'))
+            return float(loss) if loss is not None else float('inf')
+        except (subprocess.CalledProcessError, FileNotFoundError, RuntimeError) as e:
+            # Suppress errors for pruned trials
+            raise optuna.TrialPruned()
+
     def run_hyperparameter_optimization(self, study_name: str, data_config: DataConfig, model_configs: List[ModelConfig],
                                   storage_path: str = None) -> Dict[str, Any]:
-        """Run hyperparameter optimization for all provided models."""
-        ResultsDisplay.display_iteration_header(DEMO_DISPLAY_PARAMS["optimization_header"], 
-                               DEMO_DISPLAY_PARAMS["optimization_description"].format(dataset=data_config.dataset))
-        console.print(DEMO_DISPLAY_PARAMS["optimization_advantage"])
-        console.print()
+        """Run hyperparameter optimization with a live-updating display."""
+        display_ui = self.ui_config["main_display"]
+        self.results_displayer.display_iteration_header(display_ui["optimization_header"],
+                                              display_ui["optimization_description"].format(dataset=data_config.dataset))
+        console.print(display_ui["optimization_advantage"])
         
-        # Record timing for overall optimization
         start_time = self.metrics_collector.start_timer()
         
-        # Run optimization for each model
-        optimization_results = {}
-        for model_config in model_configs:
-            result = self.run_hyperparameter_optimization_for_model(model_config, study_name, data_config, storage_path=storage_path)
-            optimization_results[model_config.name] = result
+        studies = {}
+        models_to_optimize = []
+        for mc in model_configs:
+            if self.config.models[mc.name].get("search_space"):
+                studies[mc.name] = optuna.create_study(
+                    study_name=f"{study_name}_{mc.name}",
+                    storage=storage_path,
+                    direction="minimize",
+                    load_if_exists=True
+                )
+                models_to_optimize.append(mc)
+
+        if not models_to_optimize:
+            console.print("[yellow]No models with defined search spaces to optimize.[/yellow]")
+            return {}
+
+        table = Table(title="Live Optimization Progress", box=box.HORIZONTALS)
+        table.add_column("Model", style="cyan", no_wrap=True)
+        table.add_column("Best Value", style="magenta")
+        table.add_column("Best Params", style="green")
         
+        model_rows = {mc.name: i for i, mc in enumerate(models_to_optimize)}
+        for mc in models_to_optimize:
+            table.add_row(mc.name, "N/A", "N/A")
+
+        n_trials = self.config.settings["opt_trials"]
+        with Live(table, console=console, screen=False, refresh_per_second=4) as live:
+            for trial_num in range(n_trials):
+                for model_config in models_to_optimize:
+                    model_name = model_config.name
+                    study = studies[model_name]
+
+                    trial = study.ask()
+                    try:
+                        value = self._run_trial(trial, model_config, study_name, data_config)
+                        study.tell(trial, value)
+                    except optuna.TrialPruned:
+                        study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+
+                    if study.best_trial:
+                        best_value = f"{study.best_trial.value:.4f}"
+                        best_params_str = ", ".join(f"{k}={v}" for k, v in study.best_trial.params.items())
+                        table.rows[model_rows[model_name]]._cells = [model_name, best_value, best_params_str]
+                    live.update(table)
+
+        optimization_results = {}
+        for mc in model_configs:
+            if mc.name in studies:
+                study = studies[mc.name]
+                if study.best_trial:
+                    optimization_results[mc.name] = {
+                        "best_trial": study.best_trial.number,
+                        "best_params": study.best_trial.params,
+                        "best_value": study.best_trial.value,
+                    }
+            else:
+                optimization_results[mc.name] = {}
+
         elapsed_time = self.metrics_collector.end_timer(start_time)
         self.metrics_collector.record_timing("optimization_total", elapsed_time)
         
@@ -236,96 +338,56 @@ class ExperimentRunner:
     
     def run_final_evaluation(self, optimized_results: Dict[str, Any], baseline_model_configs: List[ModelConfig], study_name: str, data_config: DataConfig) -> Dict[str, Any]:
         """Run final evaluation with all optimized models."""
-        ResultsDisplay.display_iteration_header(DEMO_DISPLAY_PARAMS["evaluation_header"], 
-                               DEMO_DISPLAY_PARAMS["evaluation_description"].format(dataset=data_config.dataset))
+        display_ui = self.ui_config["main_display"]
+        runner_ui = self.ui_config["experiment_runner"]
+        progress_settings = self.ui_config["progress_settings"]
         
-        config_settings = self.config.experiment_settings
+        self.results_displayer.display_iteration_header(display_ui["evaluation_header"],
+                               display_ui["evaluation_description"].format(dataset=data_config.dataset))
         
-        # Record timing
+        config_settings = self.config.settings
         start_time = self.metrics_collector.start_timer()
         
-        # Create model configurations with optimized parameters
         final_model_configs = []
-        
-        # Add optimized versions of all models that were optimized
         for model_name, opt_result in optimized_results.items():
             if opt_result and "best_params" in opt_result:
-                # Find the corresponding baseline model config
-                baseline_config = None
-                for config in baseline_model_configs:
-                    if config.name == model_name:
-                        baseline_config = config
-                        break
-                
+                baseline_config = next((c for c in baseline_model_configs if c.name == model_name), None)
                 if baseline_config:
                     if "hrem" in baseline_config.algorithm_class.lower():
-                        # For HREM models, pass parameters as hrem_params
                         hrem_params = HREMParams(**opt_result["best_params"])
-                        optimized_config = ModelConfig(
-                            name=f"{model_name}_best",
-                            algorithm_class=baseline_config.algorithm_class,
-                            base_arch_config=baseline_config.base_arch_config,
-                            hrem_params=hrem_params
-                        )
+                        optimized_config = ModelConfig(name=f"{model_name}_best", algorithm_class=baseline_config.algorithm_class,
+                                                   base_arch_config=baseline_config.base_arch_config, hrem_params=hrem_params)
                     else:
-                        # For other models, pass parameters as arch_overrides
-                        optimized_config = ModelConfig(
-                            name=f"{model_name}_best",
-                            algorithm_class=baseline_config.algorithm_class,
-                            base_arch_config=baseline_config.base_arch_config,
-                            arch_overrides=opt_result["best_params"] or {}
-                        )
+                        optimized_config = ModelConfig(name=f"{model_name}_best", algorithm_class=baseline_config.algorithm_class,
+                                                   base_arch_config=baseline_config.base_arch_config, arch_overrides=opt_result["best_params"] or {})
                     final_model_configs.append(optimized_config)
         
-        # Also add the baseline models for comparison (like EnhancedHREM)
         for config in baseline_model_configs:
-            # Only add baseline models that weren't optimized
             if config.name not in optimized_results:
                 final_model_configs.append(config)
         
         if not final_model_configs:
-            console.print(EXPERIMENT_RUNNER_PARAMS["no_models_to_evaluate"])
+            console.print(runner_ui["no_models_to_evaluate"])
             return {}
         
-        # Create evaluation config with all final models
-        eval_config_dict = {
-            "n_runs": 1
-        }
-        
-        # Add models to evaluation config (up to 5 models supported directly)
+        eval_config_dict = {"n_runs": 1}
         model_keys = ["model_a", "model_b", "model_c", "model_d", "model_e"]
         for i, model_config in enumerate(final_model_configs):
             if i < len(model_keys):
                 eval_config_dict[model_keys[i]] = model_config
-            else:
-                break  # Only support up to 5 models directly
-        
-        # Explicitly set unused model slots to None to prevent defaults from being used
         for i in range(len(final_model_configs), len(model_keys)):
             eval_config_dict[model_keys[i]] = None
         
         config = ExperimentConfig(
             mode="evaluate",
-            run_config=RunConfig(
-                smoke_test=True,
-                study_name=study_name,
-                logger_callback=self.logger.log
-            ),
+            run_config=RunConfig(smoke_test=True, study_name=study_name, logger_callback=self.logger.log),
             data_config=data_config,
-            training_config=TrainingConfig(
-                epochs=config_settings.final_epochs, 
-                eval_interval=config_settings.final_eval_interval
-            ),
+            training_config=TrainingConfig(epochs=config_settings["final_epochs"], eval_interval=config_settings["final_eval_interval"]),
             evaluation_config=EvaluationConfig(**eval_config_dict)
         )
         
-        from demo_parameters import PROGRESS_SETTINGS
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=PROGRESS_SETTINGS["transient"],
-        ) as progress:
-            progress.add_task(description=EXPERIMENT_RUNNER_PARAMS["evaluation_spinner"], total=None)
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=progress_settings["transient"]) as progress:
+            progress.add_task(description=runner_ui["evaluation_spinner"], total=None)
             try:
                 results = run_evaluation(config)
             except Exception as e:
@@ -333,7 +395,7 @@ class ExperimentRunner:
                 
         elapsed_time = self.metrics_collector.end_timer(start_time)
         self.metrics_collector.record_timing("evaluation_total", elapsed_time)
-        completion_message = EXPERIMENT_RUNNER_PARAMS["evaluation_completion"].format(elapsed_time=elapsed_time)
+        completion_message = runner_ui["evaluation_completion"].format(elapsed_time=elapsed_time)
         console.print(f"[dim]{completion_message}[/dim]")
             
         return results.get("results", {})
@@ -346,163 +408,143 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
          storage_path: str = None):
     """Run the HRM vs HREM demonstration in the console, parameterized by challenge and models."""
     try:
-        # Create configuration
         mode = DemoMode.FAST if is_fast_mode else DemoMode.FULL
         demo_config = get_demo_config(mode, interactive)
+        ui_config = demo_config.ui
+        display_ui = ui_config["main_display"]
+
+        # Instantiate the results displayer
+        results_displayer = ResultsDisplay(ui_config)
         
-        # Get challenge - either from command line or menu
+        challenge_selector = ChallengeSelector(ui_config)
         if challenge_key:
             selected_challenge = get_challenge_by_name(challenge_key)
             if not selected_challenge:
-                # Try to find by name field or partial match
                 all_challenges = get_all_challenges_sorted()
                 challenge_names = [c.name for c in all_challenges]
                 if not ConfigValidator.validate_challenge_key(challenge_key, challenge_names):
-                    console.print(DEMO_DISPLAY_PARAMS["challenge_not_found"].format(challenge_key=challenge_key))
-                    console.print(DEMO_DISPLAY_PARAMS["available_challenges"])
+                    console.print(display_ui["challenge_not_found"].format(challenge_key=challenge_key))
+                    console.print(display_ui["available_challenges"])
                     for challenge in all_challenges:
-                        console.print(DEMO_DISPLAY_PARAMS["challenge_list_item"].format(challenge_name=challenge.name))
+                        console.print(display_ui["challenge_list_item"].format(challenge_name=challenge.name))
                     sys.exit(1)
                 
-                # Try to find the challenge
-                for challenge in all_challenges:
-                    if (challenge_key.lower() == challenge.name.lower() or 
-                        challenge_key.lower() in challenge.name.lower() or 
-                        challenge.name.lower() in challenge_key.lower()):
-                        selected_challenge = challenge
-                        break
+                selected_challenge = next((c for c in all_challenges if challenge_key.lower() in c.name.lower() or c.name.lower() in challenge_key.lower()), None)
                 
                 if not selected_challenge:
-                    console.print(DEMO_DISPLAY_PARAMS["challenge_not_found"].format(challenge_key=challenge_key))
-                    console.print(DEMO_DISPLAY_PARAMS["available_challenges"])
+                    console.print(display_ui["challenge_not_found"].format(challenge_key=challenge_key))
+                    console.print(display_ui["available_challenges"])
                     for challenge in all_challenges:
-                        console.print(DEMO_DISPLAY_PARAMS["challenge_list_item"].format(challenge_name=challenge.name))
+                        console.print(display_ui["challenge_list_item"].format(challenge_name=challenge.name))
                     sys.exit(1)
         else:
-            # Display challenge selection menu
-            selected_challenge = ChallengeSelector.display_challenge_menu()
+            selected_challenge = challenge_selector.display_challenge_menu()
         
-        # Get model configurations
-        # Use DEFAULT_MODEL_NAMES as the single source of truth for default models
         if not model_names:
-            from demo_parameters import DEFAULT_MODEL_NAMES
-            model_names = DEFAULT_MODEL_NAMES
+            model_names = demo_config.models.keys()
         
-        # Validate model names
         available_models = list_available_models()
         model_names = ConfigValidator.validate_model_names(model_names, available_models)
         
         if not model_names:
-            console.print(DEMO_DISPLAY_PARAMS["no_valid_models"])
+            console.print(display_ui["no_valid_models"])
             sys.exit(1)
         
         model_configs = get_model_configs(model_names)
         if not model_configs or not ConfigValidator.validate_model_configs(model_configs):
-            console.print(DEMO_DISPLAY_PARAMS["invalid_model_configs"])
+            console.print(display_ui["invalid_model_configs"])
             sys.exit(1)
         
-        # Display challenge details
         console.print(f"\n[bold]Selected Challenge:[/bold] [cyan]{selected_challenge.name}[/cyan]")
         console.print(f"[dim]{selected_challenge.description}[/dim]")
-        console.print(DEMO_DISPLAY_PARAMS["challenge_details_format"].format(
-            hardware=selected_challenge.recommended_hardware,
-            duration=selected_challenge.expected_duration))
-        console.print(DEMO_DISPLAY_PARAMS["difficulty_label"].format(difficulty=selected_challenge.difficulty.value.capitalize()))
+        console.print(display_ui["challenge_details_format"].format(hardware=selected_challenge.recommended_hardware, duration=selected_challenge.expected_duration))
+        console.print(display_ui["difficulty_label"].format(difficulty=selected_challenge.difficulty.value.capitalize()))
         
-        # Display models to be compared
-        console.print(DEMO_DISPLAY_PARAMS["models_comparison_format"].format(
-            models=', '.join([config.name for config in model_configs])))
+        console.print(display_ui["models_comparison_format"].format(models=', '.join([config.name for config in model_configs])))
         
         if interactive:
             try:
-                input(DEMO_DISPLAY_PARAMS["start_demo_prompt"])
+                input(display_ui["start_demo_prompt"])
             except EOFError:
-                pass  # Continue if input is not available
+                pass
         
-        # Header
         console.clear()
-        console.print(Panel(f"[bold blue]{DEMO_DISPLAY_PARAMS['demo_title'].format(challenge_name=selected_challenge.name)}[/bold blue]\n[italic]{DEMO_DISPLAY_PARAMS['demo_subtitle']}[/italic]", expand=False))
+        console.print(Panel(f"[bold blue]{display_ui['demo_title'].format(challenge_name=selected_challenge.name)}[/bold blue]\n[italic]{display_ui['demo_subtitle']}[/italic]", expand=False))
         
-        # Introduction
-        console.print(DEMO_DISPLAY_PARAMS["intro_title"].format(challenge_name=selected_challenge.name))
-        console.print(DEMO_DISPLAY_PARAMS["intro_challenge_label"].format(description=selected_challenge.description))
-        console.print(DEMO_DISPLAY_PARAMS["intro_showcase_title"])
-        for item in DEMO_DISPLAY_PARAMS["intro_showcase_items"]:
+        console.print(display_ui["intro_title"].format(challenge_name=selected_challenge.name))
+        console.print(display_ui["intro_challenge_label"].format(description=selected_challenge.description))
+        console.print(display_ui["intro_showcase_title"])
+        for item in display_ui["intro_showcase_items"]:
             console.print(item)
         
-        # Approach explanation
-        console.print(DEMO_DISPLAY_PARAMS["approach_title"])
-        console.print(DEMO_DISPLAY_PARAMS["approach_explanation"])
-        for bullet in DEMO_DISPLAY_PARAMS["approach_bullets"]:
+        console.print(display_ui["approach_title"])
+        console.print(display_ui["approach_explanation"])
+        for bullet in display_ui["approach_bullets"]:
             console.print(bullet)
         
-        # Create experiment runner
-        runner = ExperimentRunner(demo_config)
+        runner = ExperimentRunner(demo_config, results_displayer)
         
-        # Use default storage path if none provided
         if not storage_path:
-            storage_path = STORAGE_PATHS["default_optimization_db"]
+            storage_path = demo_config.paths["default_optimization_db"]
+
+        # Ensure the directory for the database exists
+        db_path = storage_path.split("///")[1]
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
-        # Step 1: Hyperparameter optimization
-        # Optimize all specified models
         optimization_results = runner.run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config, model_configs, storage_path=storage_path)
         
-        # Display optimization results
         for model_name, opt_result in optimization_results.items():
             display_optimization_results(model_name, opt_result)
         
         if interactive:
             try:
-                input(DEMO_DISPLAY_PARAMS["press_enter_evaluation"])
+                input(display_ui["press_enter_evaluation"])
             except EOFError:
-                pass  # Continue if input is not available
+                pass
         
-        # Step 2: Final evaluation with best parameters
         final_results = runner.run_final_evaluation(optimization_results, model_configs, "cli_demo_final", selected_challenge.data_config)
-        ResultsDisplay.display_model_detailed_stats(DEMO_DISPLAY_PARAMS["best_results_title"], final_results)
+        results_displayer.display_model_detailed_stats(display_ui["best_results_title"], final_results)
         
-        # Show final leader
-        ResultsDisplay.display_final_leader(final_results)
-        
-        # Display timing summary
+        results_displayer.display_final_leader(final_results)
         runner.display_timing_summary()
+        results_displayer.display_iteration_header(display_ui["demo_completed_title"])
+        results_displayer.display_final_comparison(display_ui["final_comparison_title"], final_results)
         
-        # Summary
-        ResultsDisplay.display_iteration_header(DEMO_DISPLAY_PARAMS["demo_completed_title"])
-        
-        # Display final comparison
-        ResultsDisplay.display_final_comparison(DEMO_DISPLAY_PARAMS["final_comparison_title"], final_results)
-        
-        # Key insights
-        console.print(DEMO_DISPLAY_PARAMS["key_insights_title"])
-        for item in DEMO_DISPLAY_PARAMS["key_insights_items"]:
+        console.print(display_ui["key_insights_title"])
+        for item in display_ui["key_insights_items"]:
             console.print(item)
         
-        # Unique features
-        console.print(DEMO_DISPLAY_PARAMS["unique_features_title"])
-        for item in DEMO_DISPLAY_PARAMS["unique_features_items"]:
+        console.print(display_ui["unique_features_title"])
+        for item in display_ui["unique_features_items"]:
             console.print(item)
-        console.print(DEMO_DISPLAY_PARAMS["continuous_improvement_1"])
-        console.print(DEMO_DISPLAY_PARAMS["continuous_improvement_2"])
+        console.print(display_ui["continuous_improvement_1"])
+        console.print(display_ui["continuous_improvement_2"])
         
     except Exception as e:
-        console.print(DEMO_DISPLAY_PARAMS["demo_failed_message"].format(error=e))
+        console.print(ui_config["main_display"]["demo_failed_message"].format(error=e))
         import traceback
         traceback.print_exc()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run HRM vs HREM demonstration")
+    # Load default models from the new config structure to display in help message
+    try:
+        from demo_config import DEMO_CONFIG
+        default_models = list(DEMO_CONFIG.models.keys())
+    except (ImportError, KeyError):
+        # Fallback if config isn't available yet or is malformed
+        default_models = ["HRM", "HREM"]
+
     parser.add_argument("--fast", action="store_true", help="Run in fast mode for testing")
     parser.add_argument("--interactive", action="store_true", help="Enable interactive mode with user prompts")
     parser.add_argument("--challenge-key", type=str, help="Specify challenge key directly (skips menu)")
-    parser.add_argument("--models", nargs="+", default=DEFAULT_MODEL_NAMES, 
-                        help=f"Specify models to compare (default: {' '.join(DEFAULT_MODEL_NAMES)})")
+    parser.add_argument("--models", nargs="+", default=default_models,
+                        help=f"Specify models to compare (default: {' '.join(default_models)})")
     parser.add_argument("--storage-path", type=str, help="Custom storage path for optimization database")
     
     args = parser.parse_args()
     
-    # Pass parameters to main function
     main(is_fast_mode=args.fast, interactive=args.interactive, 
          challenge_key=args.challenge_key, model_names=args.models,
          storage_path=args.storage_path)

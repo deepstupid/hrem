@@ -5,8 +5,8 @@ from enum import Enum
 from pydantic import BaseModel, Field
 from hrm_system.config import DataConfig
 
-# Import centralized parameters
-from demo_parameters import CHALLENGE_INFO
+# This file contains static definitions for the challenges and does not depend
+# on the external demo configuration.
 
 
 class ChallengeDifficulty(str, Enum):
@@ -37,101 +37,77 @@ class Challenge(BaseModel):
     recommended_hardware: str
 
 
-# Define the challenges using centralized parameters
+# Define the challenges with hardcoded descriptive strings
 CHALLENGES: Dict[str, Challenge] = {
     "copy_task_beginner": Challenge(
         name="Copy Task (Beginner)",
         description="Simple copy task with short sequences. Perfect for testing basic functionality.",
         difficulty=ChallengeDifficulty.BEGINNER,
         challenge_type=ChallengeType.SYNTHETIC,
-        data_config=DataConfig(
-            dataset="synthetic",
-            synthetic_task="copy",
-            num_aug=0
-        ),
-        computational_requirements=CHALLENGE_INFO["computational_requirements"]["minimal"],
-        expected_duration=CHALLENGE_INFO["expected_duration"]["seconds"],
-        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["any"]
+        data_config=DataConfig(dataset="synthetic", synthetic_task="copy", num_aug=0),
+        computational_requirements="Minimal - runs on any hardware",
+        expected_duration="Seconds",
+        recommended_hardware="Any CPU or GPU"
     ),
     "reverse_task_beginner": Challenge(
         name="Reverse Task (Beginner)",
         description="Simple sequence reversal task. Tests basic memory and processing capabilities.",
         difficulty=ChallengeDifficulty.BEGINNER,
         challenge_type=ChallengeType.SYNTHETIC,
-        data_config=DataConfig(
-            dataset="synthetic",
-            synthetic_task="reverse",
-            num_aug=0
-        ),
-        computational_requirements=CHALLENGE_INFO["computational_requirements"]["minimal"],
-        expected_duration=CHALLENGE_INFO["expected_duration"]["seconds"],
-        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["any"]
+        data_config=DataConfig(dataset="synthetic", synthetic_task="reverse", num_aug=0),
+        computational_requirements="Minimal - runs on any hardware",
+        expected_duration="Seconds",
+        recommended_hardware="Any CPU or GPU"
     ),
     "copy_task_intermediate": Challenge(
         name="Copy Task (Intermediate)",
         description="Copy task with longer sequences and more complex patterns.",
         difficulty=ChallengeDifficulty.INTERMEDIATE,
         challenge_type=ChallengeType.SYNTHETIC,
-        data_config=DataConfig(
-            dataset="synthetic",
-            synthetic_task="copy",
-            num_aug=5
-        ),
-        computational_requirements=CHALLENGE_INFO["computational_requirements"]["moderate"],
-        expected_duration=CHALLENGE_INFO["expected_duration"]["minutes"],
-        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["gpu_4gb"]
+        data_config=DataConfig(dataset="synthetic", synthetic_task="copy", num_aug=5),
+        computational_requirements="Moderate - requires GPU for reasonable training time",
+        expected_duration="Minutes",
+        recommended_hardware="GPU with 4GB+ VRAM"
     ),
     "arc_challenge": Challenge(
         name="ARC Challenge",
         description="Abstraction and Reasoning Corpus - measures artificial general intelligence capabilities.",
         difficulty=ChallengeDifficulty.ADVANCED,
         challenge_type=ChallengeType.ARC,
-        data_config=DataConfig(
-            dataset="arc",
-            num_aug=100
-        ),
-        computational_requirements=CHALLENGE_INFO["computational_requirements"]["high"],
-        expected_duration=CHALLENGE_INFO["expected_duration"]["hours"],
-        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["multi_gpu_24gb"]
+        data_config=DataConfig(dataset="arc", num_aug=100),
+        computational_requirements="High - requires significant GPU memory and compute",
+        expected_duration="Hours",
+        recommended_hardware="Multi-GPU setup with 24GB+ VRAM total"
     ),
     "sudoku_extreme": Challenge(
         name="Sudoku Extreme",
         description="Extremely difficult Sudoku puzzles requiring advanced reasoning.",
         difficulty=ChallengeDifficulty.ADVANCED,
         challenge_type=ChallengeType.SUDOKU,
-        data_config=DataConfig(
-            dataset="sudoku",
-            num_aug=1000
-        ),
-        computational_requirements=CHALLENGE_INFO["computational_requirements"]["high"],
-        expected_duration=CHALLENGE_INFO["expected_duration"]["hours"],
-        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["gpu_8gb"]
+        data_config=DataConfig(dataset="sudoku", num_aug=1000),
+        computational_requirements="High - requires significant GPU memory and compute",
+        expected_duration="Hours",
+        recommended_hardware="GPU with 8GB+ VRAM"
     ),
     "maze_hard": Challenge(
         name="Hard Maze Navigation",
         description="Complex maze navigation requiring path planning and memory.",
         difficulty=ChallengeDifficulty.ADVANCED,
         challenge_type=ChallengeType.MAZE,
-        data_config=DataConfig(
-            dataset="maze",
-            num_aug=100
-        ),
-        computational_requirements=CHALLENGE_INFO["computational_requirements"]["moderate"],
-        expected_duration=CHALLENGE_INFO["expected_duration"]["hours"],
-        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["gpu_6gb"]
+        data_config=DataConfig(dataset="maze", num_aug=100),
+        computational_requirements="Moderate - requires GPU for reasonable training time",
+        expected_duration="Hours",
+        recommended_hardware="GPU with 6GB+ VRAM"
     ),
     "research_challenge": Challenge(
         name="Research Challenge",
         description="Full-scale ARC-AGI-2 dataset with maximum augmentation for breakthrough research.",
         difficulty=ChallengeDifficulty.RESEARCH,
         challenge_type=ChallengeType.ARC,
-        data_config=DataConfig(
-            dataset="arc",
-            num_aug=1000
-        ),
-        computational_requirements=CHALLENGE_INFO["computational_requirements"]["very_high"],
-        expected_duration=CHALLENGE_INFO["expected_duration"]["days"],
-        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["multi_gpu_48gb"]
+        data_config=DataConfig(dataset="arc", num_aug=1000),
+        computational_requirements="Very High - requires powerful multi-GPU setup",
+        expected_duration="Days",
+        recommended_hardware="Multi-GPU setup with 48GB+ VRAM total"
     )
 }
 

@@ -1,154 +1,75 @@
 """Configuration management for the HRM/HREM demo system."""
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
-from demo_parameters import STORAGE_PATHS, SEARCH_SPACE_PATHS
+from omegaconf import OmegaConf
+
+# Load the unified demo configuration
+try:
+    DEMO_CONFIG = OmegaConf.load("config/demo_config.yaml")
+except FileNotFoundError:
+    raise RuntimeError("The main demo configuration file (config/demo_config.yaml) was not found.")
 
 class DemoMode(Enum):
     """Enumeration of demo modes."""
     FAST = "fast"
     FULL = "full"
-    INTERACTIVE = "interactive"
-
-@dataclass
-class ExperimentSettings:
-    """Settings for different phases of the experiment."""
-    baseline_epochs: int
-    baseline_eval_interval: int
-    opt_epochs: int
-    opt_eval_interval: int
-    opt_trials: int
-    final_epochs: int
-    final_eval_interval: int
 
 @dataclass
 class DemoConfig:
-    """Complete configuration for the demo system."""
+    """Complete configuration for the demo system, loaded from YAML."""
     mode: DemoMode
     interactive: bool = False
-    experiment_settings: ExperimentSettings = field(default_factory=lambda: ExperimentSettings(
-        baseline_epochs=200,
-        baseline_eval_interval=50,
-        opt_epochs=300,
-        opt_eval_interval=50,
-        opt_trials=20,
-        final_epochs=400,
-        final_eval_interval=50
-    ))
-    
+    settings: Dict[str, Any] = field(default_factory=dict)
+    ui: Dict[str, Any] = field(default_factory=dict)
+    paths: Dict[str, Any] = field(default_factory=dict)
+    models: Dict[str, Any] = field(default_factory=dict)
+
     def __post_init__(self):
         """Initialize based on mode."""
-        if self.mode == DemoMode.FAST:
-            self.experiment_settings = ExperimentSettings(
-                baseline_epochs=50,
-                baseline_eval_interval=25,
-                opt_epochs=50,
-                opt_eval_interval=25,
-                opt_trials=3,
-                final_epochs=50,
-                final_eval_interval=25
-            )
-
-# Predefined configurations
-DEMO_CONFIGS = {
-    DemoMode.FAST: DemoConfig(
-        mode=DemoMode.FAST,
-        experiment_settings=ExperimentSettings(
-            baseline_epochs=50,
-            baseline_eval_interval=25,
-            opt_epochs=50,
-            opt_eval_interval=25,
-            opt_trials=3,
-            final_epochs=50,
-            final_eval_interval=25
-        )
-    ),
-    DemoMode.FULL: DemoConfig(
-        mode=DemoMode.FULL,
-        experiment_settings=ExperimentSettings(
-            baseline_epochs=200,
-            baseline_eval_interval=50,
-            opt_epochs=300,
-            opt_eval_interval=50,
-            opt_trials=20,
-            final_epochs=400,
-            final_eval_interval=50
-        )
-    ),
-    DemoMode.INTERACTIVE: DemoConfig(
-        mode=DemoMode.INTERACTIVE,
-        interactive=True,
-        experiment_settings=ExperimentSettings(
-            baseline_epochs=200,
-            baseline_eval_interval=50,
-            opt_epochs=300,
-            opt_eval_interval=50,
-            opt_trials=20,
-            final_epochs=400,
-            final_eval_interval=50
-        )
-    )
-}
+        mode_str = self.mode.value
+        self.settings = DEMO_CONFIG.experiment_settings[f"{mode_str}_mode"]
+        self.ui = DEMO_CONFIG.ui
+        self.paths = DEMO_CONFIG.paths
+        self.models = DEMO_CONFIG.models
 
 def get_demo_config(mode: DemoMode, interactive: bool = False) -> DemoConfig:
     """Get a demo configuration based on mode and interactivity."""
-    config = DEMO_CONFIGS.get(mode, DEMO_CONFIGS[DemoMode.FULL])
-    if interactive:
-        config.interactive = True
-    return config
+    return DemoConfig(mode=mode, interactive=interactive)
 
-# Configuration factory for different algorithms
 class AlgorithmConfigFactory:
-    """Factory for creating algorithm-specific configurations."""
-    
-    @staticmethod
-    def get_search_space_path(algorithm_class: str) -> str:
-        """Get the appropriate search space path for an algorithm."""
-        if "hrm" in algorithm_class.lower() and "hrem" not in algorithm_class.lower():
-            return SEARCH_SPACE_PATHS["hrm"]
-        elif "hrem" in algorithm_class.lower():
-            return SEARCH_SPACE_PATHS["hrem"]
-        else:
-            # Default to HREM search space for other models
-            return SEARCH_SPACE_PATHS["hrem"]
+    """Factory for creating algorithm-specific configurations from the loaded YAML."""
     
     @staticmethod
     def create_optimization_config(
-        algorithm_class: str,
         model_name: str,
-        opt_trials: int = 20,
+        opt_trials: int,
         storage_path: str = None
     ) -> Dict[str, Any]:
         """Create optimization configuration for a specific algorithm."""
+        model_config = DEMO_CONFIG.models.get(model_name)
+        if not model_config:
+            raise ValueError(f"Model '{model_name}' not found in demo configuration.")
+
+        # Use the provided storage path or fall back to the default from the config
+        final_storage_path = storage_path or DEMO_CONFIG.paths.default_optimization_db
+
         config = {
             "n_trials": opt_trials,
             "n_jobs": 1,
-            "storage": storage_path or STORAGE_PATHS["default_optimization_db"],
+            "storage": final_storage_path,
             "n_final_runs": 1,
             "model_to_optimize": {
                 "name": f"{model_name}_best",
-                "algorithm_class": algorithm_class,
-                "base_arch_config": AlgorithmConfigFactory._get_base_arch_config(algorithm_class)
+                "algorithm_class": model_config.algorithm_class,
+                "base_arch_config": model_config.base_arch_config
             }
         }
         
-        # Add search space if needed
-        search_space_path = AlgorithmConfigFactory.get_search_space_path(algorithm_class)
-        if search_space_path:
-            config["search_space"] = {"path": search_space_path}
+        # Add search space if it exists for the model
+        if "search_space" in model_config and model_config.search_space:
+            # OmegaConf converts it to a specific type, so we convert it back to a plain dict
+            config["search_space"] = OmegaConf.to_container(model_config.search_space, resolve=True)
             
         return config
-    
-    @staticmethod
-    def _get_base_arch_config(algorithm_class: str) -> str:
-        """Get the base architecture config for an algorithm."""
-        if "hrm" in algorithm_class.lower() and "hrem" not in algorithm_class.lower():
-            return "hrm_v1"
-        elif "enhanced" in algorithm_class.lower() and "hrem" in algorithm_class.lower():
-            return "enhanced_hrem_v1"
-        elif "hrem" in algorithm_class.lower():
-            return "hrem_v1"
-        else:
-            # Default to hrem_v1 for unknown algorithms
-            return "hrem_v1"

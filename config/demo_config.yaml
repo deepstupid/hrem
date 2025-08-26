@@ -41,12 +41,13 @@ ui:
       - "• ⚡ Immediate baseline performance results"
       - "• 🔍 Optional guided hyperparameter optimization"
       - "• 🏆 Final comparison with best parameters"
-    approach_title: "\n[bold blue]🧠 Approach Explanation[/bold blue]"
-    approach_explanation: "The HRM System uses a novel approach to hyperparameter optimization:"
+    approach_title: "\n[bold blue]🧠 Adaptive Approach Explanation[/bold blue]"
+    approach_explanation: "The HRM System uses an adaptive approach to hyperparameter optimization:"
     approach_bullets:
-      - "• First, a baseline run provides immediate performance feedback."
-      - "• Then, an optional guided search explores hyperparameter space efficiently."
-      - "• Each iteration generates actionable results for continuous improvement."
+      - "• It respects your time by adhering to a defined 'patience' level (time budget)."
+      - "• It adapts to your hardware by detecting CPU and GPU resources to optimize parallelism."
+      - "• It focuses on promising models, stopping early for those that do not show improvement."
+      - "• This ensures the best possible results are found within the given constraints."
     demo_completed_title: "✅ Demonstration Completed Successfully!"
     final_comparison_title: "📊 Best Performance Comparison"
     key_insights_title: "\n[bold]🔑 Key Insights:[/bold]"
@@ -116,18 +117,50 @@ paths:
 # 3. Experiment Settings
 experiment_settings:
   default_model_names: ["HRM", "HREM"]
-  full_mode:
-    opt_trials: 20
-    opt_epochs: 300
-    opt_eval_interval: 50
-    final_epochs: 400
-    final_eval_interval: 50
-  fast_mode:
-    opt_trials: 5
-    opt_epochs: 1
-    opt_eval_interval: 1
-    final_epochs: 1
-    final_eval_interval: 1
+  patience_levels:
+    low:
+      time_budget_seconds: 300    # 5 minutes
+      baseline_epochs: 1
+      baseline_eval_interval: 1
+      opt_epochs: 1
+      opt_eval_interval: 1
+      final_epochs: 1
+      final_eval_interval: 1
+      min_trials_per_model: 2
+      max_trials_per_model: 5
+      improvement_threshold: 0.01
+      no_improvement_patience: 3
+    medium:
+      time_budget_seconds: 900    # 15 minutes
+      baseline_epochs: 150
+      baseline_eval_interval: 50
+      opt_epochs: 150
+      opt_eval_interval: 50
+      final_epochs: 200
+      final_eval_interval: 50
+      min_trials_per_model: 5
+      max_trials_per_model: 20
+      improvement_threshold: 0.005
+      no_improvement_patience: 5
+    high:
+      time_budget_seconds: 3600   # 1 hour
+      baseline_epochs: 300
+      baseline_eval_interval: 50
+      opt_epochs: 300
+      opt_eval_interval: 50
+      final_epochs: 400
+      final_eval_interval: 50
+      min_trials_per_model: 10
+      max_trials_per_model: 50
+      improvement_threshold: 0.001
+      no_improvement_patience: 10
+  resource_profiles:
+    low:
+      n_jobs: 1
+    medium:
+      n_jobs: 4
+    high:
+      n_jobs: 8
 
 # 4. Model Configurations
 models:

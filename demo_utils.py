@@ -7,9 +7,6 @@ from rich import box
 from rich.panel import Panel
 from hrm_system.config import HREMParams
 
-# No longer importing from demo_parameters
-# from demo_parameters import DISPLAY_COLORS, METRICS_INFO, KEY_METRICS
-
 console = Console()
 
 class DemoLogger:

@@ -8,6 +8,14 @@ from rich import box
 from rich.panel import Panel
 from scipy.stats import ttest_ind
 import pandas as pd
+from pathlib import Path
+
+try:
+    import optuna
+    from optuna.visualization import plot_param_importances, plot_slice
+    _optuna_available = True
+except ImportError:
+    _optuna_available = False
 
 console = Console()
 
@@ -219,3 +227,86 @@ class ScientificReporter:
                 writer.writerow(row)
         
         console.print(f"[green]Results exported to {filepath}[/green]")
+
+    @staticmethod
+    def generate_optimization_report(
+        study: "optuna.study.Study",
+        output_dir: Path,
+    ) -> Path:
+        """
+        Generates a markdown report with scientific insights from the optimization study.
+
+        Args:
+            study: The Optuna study object.
+            output_dir: The directory to save the report in.
+
+        Returns:
+            The path to the generated report.
+        """
+        if not _optuna_available:
+            return Path("optuna_not_available.md")
+
+        report_path = output_dir / "scientific_report.md"
+        plots_dir = output_dir / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate plots
+        try:
+            param_importance_fig = plot_param_importances(study)
+            param_importance_path = plots_dir / "param_importances.html"
+            param_importance_fig.write_html(str(param_importance_path))
+            param_importance_md = f"![Parameter Importance]({param_importance_path.relative_to(output_dir)})"
+        except (ValueError, ZeroDivisionError):
+            param_importance_md = "Parameter importance plot could not be generated (not enough completed trials)."
+
+
+        try:
+            slice_fig = plot_slice(study)
+            slice_path = plots_dir / "slice.html"
+            slice_fig.write_html(str(slice_path))
+            slice_md = f"![Slice Plot]({slice_path.relative_to(output_dir)})"
+        except (ValueError, ZeroDivisionError):
+            slice_md = "Slice plot could not be generated (not enough completed trials)."
+
+
+        report_content = f"""
+# Scientific Insights Report
+
+This report provides a deeper scientific analysis of the hyperparameter optimization study '{study.study_name}'.
+
+## 1. Executive Summary
+
+- **Best Trial Number:** `{study.best_trial.number}`
+- **Best Value (Loss):** `{study.best_trial.value:.4f}`
+
+### Best Hyperparameters:
+```json
+{study.best_params}
+```
+
+## 2. Scientific Discovery: Hyperparameter Importance
+
+This plot shows the relative importance of each hyperparameter in determining the model's performance.
+Parameters with higher importance values are more influential.
+
+{param_importance_md}
+
+## 3. Scientific Discovery: Slice Plot
+
+This plot shows how individual hyperparameters affect the objective value. It can be used to
+understand the relationship between a parameter and the model's performance and to identify
+promising ranges for each parameter.
+
+{slice_md}
+
+## 4. Conclusion & Future Directions
+
+The optimization study has identified a promising set of hyperparameters. The importance and slice plots
+provide valuable insights for future research. For example, a next step could be to run a new study
+with a more focused search space around the best values found here.
+"""
+
+        with open(report_path, "w") as f:
+            f.write(report_content)
+
+        return report_path

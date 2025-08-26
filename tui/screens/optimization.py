@@ -1,6 +1,6 @@
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Static, Select, Input, Button, Checkbox, Log
+from textual.widgets import Static, Select, Input, Button, Checkbox, RichLog
 from textual import work
 
 from hrm_system import (
@@ -32,7 +32,7 @@ class OptimizationScreen(Static):
 
         yield Button("Run Optimization", variant="primary", id="run_optimization_button")
 
-        yield Log(id="optimization_log", classes="log_view", auto_scroll=True)
+        yield RichLog(id="optimization_log", classes="log_view", auto_scroll=True, wrap=True)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle the run optimization button press."""
@@ -82,11 +82,16 @@ class OptimizationScreen(Static):
 
     class LogMessage(Static):
         """A message to be posted to the log."""
-        def __init__(self, message: str) -> None:
+        def __init__(self, message: Any) -> None:
             super().__init__()
             self.message = message
 
     def on_optimization_screen_log_message(self, message: LogMessage) -> None:
         """Handle a log message from a worker."""
-        log_widget = self.query_one("#optimization_log", Log)
-        log_widget.write(message.message)
+        log_widget = self.query_one("#optimization_log", RichLog)
+        if isinstance(message.message, str):
+            log_widget.write(message.message)
+        else:
+            # Clear the log and write the table for live updates
+            log_widget.clear()
+            log_widget.write(message.message)

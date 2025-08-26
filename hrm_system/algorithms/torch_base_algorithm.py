@@ -1,6 +1,7 @@
 import os
 import yaml
 import torch
+from omegaconf import OmegaConf
 import torch.distributed as dist
 from torch import nn
 from torch.optim import Adam
@@ -33,40 +34,48 @@ class TorchBaseAlgorithm(Algorithm):
         self.train_state: Optional[TrainState] = None
 
     def _init_train_state(self, train_metadata: PuzzleDatasetMetadata, world_size: int, rank: int):
-        # Load base architecture config
+        # Load base architecture config using OmegaConf to handle interpolations
         arch_config_path = f"config/arch/{self.model_config.base_arch_config}.yaml"
         with open(arch_config_path, 'r') as f:
-            arch_config = yaml.safe_load(f)
+            # Use OmegaConf to load, which supports interpolation
+            arch_config = OmegaConf.load(f)
 
-        # Model config
-        hrem_params = self.model_config.hrem_params.model_dump() if self.model_config.hrem_params else {}
-
+        # Create a new OmegaConf object for the model configuration
         model_cfg = arch_config.copy()
-        model_cfg.update(hrem_params)
+
+        # Merge HREM params or other overrides
+        if self.model_config.hrem_params:
+            hrem_params = OmegaConf.create(self.model_config.hrem_params.model_dump())
+            model_cfg = OmegaConf.merge(model_cfg, hrem_params)
+
+        if self.model_config.arch_overrides:
+            overrides = OmegaConf.create(self.model_config.arch_overrides)
+            model_cfg = OmegaConf.merge(model_cfg, overrides)
 
         # Add/override with other dynamic parameters
-        model_cfg.update({
+        dynamic_params = OmegaConf.create({
             "batch_size": self.training_config.global_batch_size // world_size,
             "vocab_size": train_metadata.vocab_size,
             "seq_len": train_metadata.seq_len,
             "num_puzzle_identifiers": train_metadata.num_puzzle_identifiers,
             "causal": False,
         })
-
-        # Apply overrides from model_config
-        if self.model_config.arch_overrides:
-            model_cfg.update(self.model_config.arch_overrides)
+        model_cfg = OmegaConf.merge(model_cfg, dynamic_params)
 
         if self.training_config.smoke_test:
-            model_cfg.update({
+            smoke_overrides = OmegaConf.create({
                 "puzzle_emb_ndim": 16,
                 "num_heads": 1,
                 "expansion": 1.0,
             })
+            model_cfg = OmegaConf.merge(model_cfg, smoke_overrides)
+
+        # Resolve all interpolations and convert to a plain python dict
+        model_cfg_resolved = OmegaConf.to_container(model_cfg, resolve=True)
 
         # Instantiate model with loss head
-        model_cls = load_model_class(arch_config['name'])
-        loss_config = arch_config['loss'].copy()
+        model_cls = load_model_class(model_cfg_resolved['name'])
+        loss_config = model_cfg_resolved['loss'].copy()
         loss_head_cls = load_model_class(loss_config.pop('name'))
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

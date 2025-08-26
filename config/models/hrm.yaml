@@ -1,0 +1,4 @@
+name: HRM
+algorithm_class: hrm_system.algorithms.hrm.HRMAlgorithm
+base_arch_config: hrm_v1
+search_space_config: hrm_search_space

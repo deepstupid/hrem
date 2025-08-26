@@ -1,0 +1,9 @@
+arch_overrides:
+  hidden_size:
+    type: categorical
+    choices: [64, 128, 256]
+    smoke_choices: [64, 128]
+  num_heads:
+    type: categorical
+    choices: [1, 2, 4]
+    smoke_choices: [1, 2]

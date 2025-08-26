@@ -20,22 +20,23 @@ def _objective(
     opt_config = config.optimization_config
     logger = run_config.logger_callback or print
 
-    # 1. Suggest hyperparameters
+    # 1. Suggest hyperparameters from the provided search space
     params = {}
-    search_space_path = opt_config.search_space.get("path", "config/hparam_search_space.yaml")
-    with open(search_space_path, 'r') as f:
-        search_space = yaml.safe_load(f)
+    search_space = opt_config.search_space
+    if not search_space:
+        logger("[bold red]No search space provided for optimization.[/bold red]")
+        raise optuna.TrialPruned()
 
-    # Determine which parameter section to use based on the model being optimized
-    param_section = "hrem_params"
-    if "hrm" in opt_config.model_to_optimize.name.lower() or "hrm" in opt_config.model_to_optimize.algorithm_class.lower():
-        param_section = "hrm_params"
+    # The top-level key in the search space (e.g., 'hrem_params', 'arch_overrides')
+    # determines where the parameters will be applied.
+    param_section_key = next(iter(search_space), None)
+    if not param_section_key:
+        logger("[bold red]Search space is empty.[/bold red]")
+        raise optuna.TrialPruned()
     
-    # Fallback to hrem_params if the specific section doesn't exist
-    if param_section not in search_space:
-        param_section = "hrem_params"
+    param_definitions = search_space[param_section_key]
 
-    for name, definition in search_space[param_section].items():
+    for name, definition in param_definitions.items():
         param_type = definition['type']
         if run_config.smoke_test and f"smoke_{param_type}" in definition:
             param_type = f"smoke_{definition['type']}"
@@ -51,12 +52,19 @@ def _objective(
     # 2. Create model config for this trial
     trial_model_config = opt_config.model_to_optimize.model_copy(deep=True)
     
-    # Set parameters based on model type
-    if "hrem" in opt_config.model_to_optimize.name.lower() or "hrem" in opt_config.model_to_optimize.algorithm_class.lower():
-        trial_model_config.hrem_params = HREMParams(**params)
+    # Dynamically set the attribute on the model config
+    if hasattr(trial_model_config, param_section_key):
+        # For structured pydantic models like hrem_params
+        param_model = getattr(trial_model_config, param_section_key)
+        if param_model and isinstance(param_model, HREMParams):
+             # Create a new HREMParams object with the suggested values
+            setattr(trial_model_config, param_section_key, HREMParams(**params))
+        else:
+             # Fallback for other potential structured models
+            setattr(trial_model_config, param_section_key, params)
     else:
-        # For HRM, we'll pass parameters as arch_overrides
-        trial_model_config.arch_overrides = params
+        # For simple dictionaries like arch_overrides
+        setattr(trial_model_config, param_section_key, params)
 
     # 3. Run the model
     try:
@@ -138,15 +146,20 @@ def run_optimization(config: ExperimentConfig) -> Dict[str, Any]:
     ]
     final_metrics[opt_config.baseline_model.name] = aggregate_metrics(baseline_metrics_list)
 
-    # Run best model (could be HRM or HREM)
+    # Run best model
     best_model_config = opt_config.model_to_optimize.model_copy(deep=True)
     
-    # Set parameters based on model type
-    if "hrem" in opt_config.model_to_optimize.name.lower() or "hrem" in opt_config.model_to_optimize.algorithm_class.lower():
-        best_model_config.hrem_params = HREMParams(**best_trial.params)
-    else:
-        # For HRM, we'll pass parameters as arch_overrides
-        best_model_config.arch_overrides = best_trial.params
+    # Dynamically determine where to set the best parameters
+    param_section_key = next(iter(opt_config.search_space), None)
+    if param_section_key:
+        if hasattr(best_model_config, param_section_key):
+            param_model = getattr(best_model_config, param_section_key)
+            if param_model and isinstance(param_model, HREMParams):
+                setattr(best_model_config, param_section_key, HREMParams(**best_trial.params))
+            else:
+                setattr(best_model_config, param_section_key, best_trial.params)
+        else:
+            setattr(best_model_config, param_section_key, best_trial.params)
 
     best_hrem_metrics_list = [
         run_single_model(

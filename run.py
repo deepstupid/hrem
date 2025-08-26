@@ -1,3 +1,4 @@
+import os
 import click
 from rich.console import Console
 from typing import List
@@ -13,9 +14,12 @@ from hrm_system import (
     run_evaluation,
     run_optimization,
 )
-from demo_config import PatienceLevel
-from run_demo_cli_parameterized import run_demonstration
-from demo_models import list_available_models
+from demo_models import (
+    list_available_models,
+    get_model_configs,
+    get_model_config,
+    get_model_search_space,
+)
 
 console = Console()
 
@@ -25,7 +29,7 @@ def logger_callback(message: str):
 
 @click.group()
 def cli():
-    """HRM System: A unified interface for evaluation, optimization, and demonstration."""
+    """HRM System: A unified interface for evaluation and optimization."""
     pass
 
 @cli.command()
@@ -34,24 +38,21 @@ def cli():
 @click.option("--n-runs", default=1, type=int, help="Number of runs for statistical significance.")
 @click.option("--smoke-test", is_flag=True, default=False, help="Run in smoke test mode.")
 @click.option("--study-name", default="cli_evaluation", type=str, help="Name for the study.")
-@click.option("--models", "-m", multiple=True, default=["HRM", "HREM"], help="Models to evaluate.")
+@click.option(
+    "--models",
+    "-m",
+    multiple=True,
+    default=["HRM", "HREM"],
+    type=click.Choice(list_available_models()),
+    help="Models to evaluate.",
+)
 def evaluate(dataset, num_aug, n_runs, smoke_test, study_name, models):
     """Run a side-by-side comparison of specified models."""
     console.print(f"[bold blue]Starting Evaluation: {study_name}[/bold blue]")
 
-    model_configs = []
-    available_models = {
-        "HRM": ModelConfig(name="HRM", algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm", base_arch_config="hrm_v1"),
-        "HREM": ModelConfig(name="HREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="hrem_v1"),
-        "EnhancedHREM": ModelConfig(name="EnhancedHREM", algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm", base_arch_config="enhanced_hrem_v1"),
-    }
-    for model_name in models:
-        if model_name in available_models:
-            model_configs.append(available_models[model_name])
-        else:
-            console.print(f"[yellow]Warning: Model '{model_name}' not found. Skipping.[/yellow]")
+    model_configs = get_model_configs(list(models))
 
-    if len(model_configs) < 1:
+    if not model_configs:
         console.print("[red]Error: No valid models specified for evaluation.[/red]")
         return
 
@@ -98,12 +99,32 @@ def evaluate(dataset, num_aug, n_runs, smoke_test, study_name, models):
 @click.option("--n-trials", default=10, type=int, help="Number of optimization trials.")
 @click.option("--n-jobs", default=1, type=int, help="Number of parallel jobs for Optuna.")
 @click.option("--n-final-runs", default=1, type=int, help="Number of final comparison runs.")
-@click.option("--storage", default="sqlite:///experiments/optuna_cli.db", help="Optuna storage URL.")
+@click.option(
+    "--storage",
+    default=f"sqlite:///{os.path.abspath('experiments')}/optuna_cli.db",
+    help="Optuna storage URL.",
+)
 @click.option("--smoke-test", is_flag=True, default=False, help="Run in smoke test mode.")
 @click.option("--study-name", default="cli_optimization", type=str, help="Name for the study.")
-def optimize(dataset, n_trials, n_jobs, n_final_runs, storage, smoke_test, study_name):
-    """Run hyperparameter optimization for the HREM model."""
-    console.print(f"[bold blue]Starting Optimization: {study_name}[/bold blue]")
+@click.option(
+    "--model",
+    default="HREM",
+    type=click.Choice(list_available_models()),
+    help="Model to optimize.",
+)
+def optimize(dataset, n_trials, n_jobs, n_final_runs, storage, smoke_test, study_name, model):
+    """Run hyperparameter optimization for a specified model."""
+    console.print(f"[bold blue]Starting Optimization for {model}: {study_name}[/bold blue]")
+
+    model_to_optimize = get_model_config(model)
+    if not model_to_optimize:
+        console.print(f"[red]Error: Model '{model}' not found.[/red]")
+        return
+
+    search_space = get_model_search_space(model)
+    if not search_space:
+        console.print(f"[red]Error: No search space defined for model '{model}'.[/red]")
+        return
 
     config = ExperimentConfig(
         mode="optimize",
@@ -119,30 +140,14 @@ def optimize(dataset, n_trials, n_jobs, n_final_runs, storage, smoke_test, study
             n_trials=n_trials,
             n_jobs=n_jobs,
             n_final_runs=n_final_runs,
-            storage=storage
+            storage=storage,
+            model_to_optimize=model_to_optimize,
+            search_space=search_space,
         )
     )
 
     run_optimization(config)
     console.print(f"[bold green]Optimization '{study_name}' finished.[/bold green]")
-
-@cli.command()
-@click.option("--patience", type=click.Choice(["low", "medium", "high"]), default="medium", help="Set the patience level for the demo.")
-@click.option("--interactive", is_flag=True, help="Enable interactive mode with user prompts.")
-@click.option("--challenge-key", type=str, help="Specify challenge key directly (skips menu).")
-@click.option("--models", "-m", multiple=True, default=["HRM", "HREM"], help=f"Specify models to compare.")
-@click.option("--storage-path", type=str, help="Custom storage path for optimization database.")
-def demonstration(patience, interactive, challenge_key, models, storage_path):
-    """Run an interactive demonstration with baseline, optimization, and final evaluation."""
-    console.print(f"[bold blue]Starting Demonstration[/bold blue]")
-    run_demonstration(
-        patience=PatienceLevel(patience),
-        interactive=interactive,
-        challenge_key=challenge_key,
-        model_names=models,
-        storage_path=storage_path
-    )
-    console.print(f"[bold green]Demonstration finished.[/bold green]")
 
 
 if __name__ == "__main__":

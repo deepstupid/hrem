@@ -1,0 +1,4 @@
+name: HREM
+algorithm_class: hrm_system.algorithms.hrem.HREMAlgorithm
+base_arch_config: hrem_v1
+search_space_config: hrem_search_space

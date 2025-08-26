@@ -5,6 +5,9 @@ from enum import Enum
 from pydantic import BaseModel, Field
 from hrm_system.config import DataConfig
 
+# Import centralized parameters
+from demo_parameters import CHALLENGE_INFO
+
 
 class ChallengeDifficulty(str, Enum):
     """Difficulty levels for challenges."""
@@ -34,7 +37,7 @@ class Challenge(BaseModel):
     recommended_hardware: str
 
 
-# Define the challenges
+# Define the challenges using centralized parameters
 CHALLENGES: Dict[str, Challenge] = {
     "copy_task_beginner": Challenge(
         name="Copy Task (Beginner)",
@@ -46,9 +49,9 @@ CHALLENGES: Dict[str, Challenge] = {
             synthetic_task="copy",
             num_aug=0
         ),
-        computational_requirements="Minimal - runs on any hardware",
-        expected_duration="Seconds",
-        recommended_hardware="Any CPU or GPU"
+        computational_requirements=CHALLENGE_INFO["computational_requirements"]["minimal"],
+        expected_duration=CHALLENGE_INFO["expected_duration"]["seconds"],
+        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["any"]
     ),
     "reverse_task_beginner": Challenge(
         name="Reverse Task (Beginner)",
@@ -60,9 +63,9 @@ CHALLENGES: Dict[str, Challenge] = {
             synthetic_task="reverse",
             num_aug=0
         ),
-        computational_requirements="Minimal - runs on any hardware",
-        expected_duration="Seconds",
-        recommended_hardware="Any CPU or GPU"
+        computational_requirements=CHALLENGE_INFO["computational_requirements"]["minimal"],
+        expected_duration=CHALLENGE_INFO["expected_duration"]["seconds"],
+        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["any"]
     ),
     "copy_task_intermediate": Challenge(
         name="Copy Task (Intermediate)",
@@ -74,9 +77,9 @@ CHALLENGES: Dict[str, Challenge] = {
             synthetic_task="copy",
             num_aug=5
         ),
-        computational_requirements="Moderate - requires GPU for reasonable training time",
-        expected_duration="Minutes",
-        recommended_hardware="GPU with 4GB+ VRAM"
+        computational_requirements=CHALLENGE_INFO["computational_requirements"]["moderate"],
+        expected_duration=CHALLENGE_INFO["expected_duration"]["minutes"],
+        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["gpu_4gb"]
     ),
     "arc_challenge": Challenge(
         name="ARC Challenge",
@@ -87,9 +90,9 @@ CHALLENGES: Dict[str, Challenge] = {
             dataset="arc",
             num_aug=100
         ),
-        computational_requirements="High - requires significant GPU memory and compute",
-        expected_duration="Hours",
-        recommended_hardware="Multi-GPU setup with 24GB+ VRAM total"
+        computational_requirements=CHALLENGE_INFO["computational_requirements"]["high"],
+        expected_duration=CHALLENGE_INFO["expected_duration"]["hours"],
+        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["multi_gpu_24gb"]
     ),
     "sudoku_extreme": Challenge(
         name="Sudoku Extreme",
@@ -100,9 +103,9 @@ CHALLENGES: Dict[str, Challenge] = {
             dataset="sudoku",
             num_aug=1000
         ),
-        computational_requirements="High - requires significant GPU memory and compute",
-        expected_duration="Hours",
-        recommended_hardware="GPU with 8GB+ VRAM"
+        computational_requirements=CHALLENGE_INFO["computational_requirements"]["high"],
+        expected_duration=CHALLENGE_INFO["expected_duration"]["hours"],
+        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["gpu_8gb"]
     ),
     "maze_hard": Challenge(
         name="Hard Maze Navigation",
@@ -113,9 +116,9 @@ CHALLENGES: Dict[str, Challenge] = {
             dataset="maze",
             num_aug=100
         ),
-        computational_requirements="Moderate to High - requires GPU for reasonable training time",
-        expected_duration="Hours",
-        recommended_hardware="GPU with 6GB+ VRAM"
+        computational_requirements=CHALLENGE_INFO["computational_requirements"]["moderate"],
+        expected_duration=CHALLENGE_INFO["expected_duration"]["hours"],
+        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["gpu_6gb"]
     ),
     "research_challenge": Challenge(
         name="Research Challenge",
@@ -126,9 +129,9 @@ CHALLENGES: Dict[str, Challenge] = {
             dataset="arc",
             num_aug=1000
         ),
-        computational_requirements="Very High - requires powerful multi-GPU setup",
-        expected_duration="Days",
-        recommended_hardware="Multi-GPU setup with 48GB+ VRAM total"
+        computational_requirements=CHALLENGE_INFO["computational_requirements"]["very_high"],
+        expected_duration=CHALLENGE_INFO["expected_duration"]["days"],
+        recommended_hardware=CHALLENGE_INFO["recommended_hardware"]["multi_gpu_48gb"]
     )
 }
 

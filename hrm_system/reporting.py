@@ -5,6 +5,12 @@ import pandas as pd
 from .config import EvaluationConfig, OptimizationConfig, RunConfig
 import optuna
 
+# Define priority metrics as a constant for single source of truth
+PRIORITY_METRICS = [
+    'all/accuracy', 'all/lm_loss', 'all/steps', 'num_params',
+    'all/exact_accuracy', 'all/q_halt_accuracy', 'all/q_halt_loss'
+]
+
 def aggregate_metrics(metrics_list: List[Dict[str, Any]]) -> Dict[str, str]:
     """
     Aggregates metrics from a list of dictionaries, calculating mean and std dev.
@@ -127,15 +133,10 @@ def generate_evaluation_report(
     report_lines.extend([header, separator])
 
     # Prioritize important metrics first
-    priority_metrics = [
-        'all/accuracy', 'all/lm_loss', 'all/steps', 'num_params',
-        'all/exact_accuracy', 'all/q_halt_accuracy', 'all/q_halt_loss'
-    ]
-    
     all_keys = sorted(set(key for metrics in all_metrics.values() for key in metrics.keys()))
     # Move priority metrics to the front
-    ordered_keys = [key for key in priority_metrics if key in all_keys]
-    ordered_keys.extend([key for key in all_keys if key not in priority_metrics])
+    ordered_keys = [key for key in PRIORITY_METRICS if key in all_keys]
+    ordered_keys.extend([key for key in all_keys if key not in PRIORITY_METRICS])
 
     for key in ordered_keys:
         # Make metric names more readable
@@ -233,15 +234,10 @@ def generate_optimization_report(
     report_lines.extend([header, separator])
 
     # Prioritize important metrics first
-    priority_metrics = [
-        'all/accuracy', 'all/lm_loss', 'all/steps', 'num_params',
-        'all/exact_accuracy', 'all/q_halt_accuracy', 'all/q_halt_loss'
-    ]
-    
     all_keys = sorted(set(key for metrics in final_metrics.values() for key in metrics.keys()))
     # Move priority metrics to the front
-    ordered_keys = [key for key in priority_metrics if key in all_keys]
-    ordered_keys.extend([key for key in all_keys if key not in priority_metrics])
+    ordered_keys = [key for key in PRIORITY_METRICS if key in all_keys]
+    ordered_keys.extend([key for key in all_keys if key not in PRIORITY_METRICS])
 
     for key in ordered_keys:
         # Make metric names more readable

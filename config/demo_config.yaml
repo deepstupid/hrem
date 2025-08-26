@@ -16,6 +16,8 @@ ui:
     exit_message: "\n[yellow]Exiting...[/yellow]"
 
   experiment_runner:
+    baseline_spinner: "Running {model_name} baseline evaluation..."
+    baseline_completion: "⏱️  {model_name} baseline completed in {elapsed_time:.1f} seconds"
     optimization_spinner: "Running {model_name} hyperparameter optimization..."
     optimization_completion: "⏱️  {model_name} optimization completed in {elapsed_time:.1f} seconds"
     evaluation_spinner: "Running final evaluation..."
@@ -36,14 +38,15 @@ ui:
     intro_challenge_label: "[dim]{description}[/dim]"
     intro_showcase_title: "\n[bold]This demonstration showcases:[/bold]"
     intro_showcase_items:
-      - "• 🔍 Hyperparameter optimization with real-time feedback"
-      - "• 🏆 Best results and their parameters"
+      - "• ⚡ Immediate baseline performance results"
+      - "• 🔍 Optional guided hyperparameter optimization"
+      - "• 🏆 Final comparison with best parameters"
     approach_title: "\n[bold blue]🧠 Approach Explanation[/bold blue]"
     approach_explanation: "The HRM System uses a novel approach to hyperparameter optimization:"
     approach_bullets:
-      - "• Uses guided search to explore hyperparameter space efficiently"
-      - "• Generates actionable results after each iteration"
-      - "• Continuously improves based on real-time feedback"
+      - "• First, a baseline run provides immediate performance feedback."
+      - "• Then, an optional guided search explores hyperparameter space efficiently."
+      - "• Each iteration generates actionable results for continuous improvement."
     demo_completed_title: "✅ Demonstration Completed Successfully!"
     final_comparison_title: "📊 Best Performance Comparison"
     key_insights_title: "\n[bold]🔑 Key Insights:[/bold]"
@@ -66,13 +69,23 @@ ui:
     no_valid_models: "[bold red]❌ No valid models specified![/bold red]"
     invalid_model_configs: "[bold red]❌ No valid models specified or invalid model configurations![/bold red]"
     difficulty_label: "📈 Difficulty: {difficulty}"
-    optimization_header: "🔍 Step 2: Guided Hyperparameter Optimization"
+
+    # Workflow Steps
+    baseline_header: "⚡ Step 1: Baseline Performance Evaluation"
+    baseline_description: "Running a single evaluation for each model on {dataset} with default parameters..."
+    baseline_results_title: "📊 Baseline Results"
+    ask_for_optimization: "\n[bold yellow]Do you want to run hyperparameter optimization?[/bold yellow] (This may take a while)"
+    skipping_final_eval: "[dim]Skipping final evaluation as optimization was not run.[/dim]"
+
+    optimization_header: "🔍 Step 2: Guided Hyperparameter Optimization (Optional)"
     optimization_description: "Optimizing hyperparameters for all models on {dataset} dataset with real-time performance feedback..."
     optimization_advantage: "[dim]💡 Key advantage: Results are generated after each iteration![/dim]"
+
     evaluation_header: "🏆 Step 3: Final Performance Comparison"
     evaluation_description: "Running final comparison with optimized parameters on {dataset} dataset..."
-    best_results_title: "🏆 Best Results"
+    best_results_title: "🏆 Best Overall Results"
     press_enter_evaluation: "\n[bold blue]Press Enter to see final evaluation...[/bold blue]"
+
     iteration_header_format: "[bold blue]{title}[/bold blue]"
     final_comparison_header: "[bold]{title}[/bold]"
     continuous_improvement_1: "\n[italic]The system begins generating results immediately,[/italic]"

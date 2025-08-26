@@ -132,8 +132,8 @@ class ChallengeSelector:
         self._display_challenge_list(challenges)
         return self._get_user_selection(challenges)
 
-class ExperimentRunner:
-    """Handles running the different phases of the experiment."""
+class DemoRunner:
+    """Handles running the different phases of the demo."""
     
     def __init__(self, demo_config, results_displayer):
         self.config = demo_config
@@ -165,115 +165,6 @@ class ExperimentRunner:
             raise SystemExit(1)
         else:
             raise e
-    
-    def run_hyperparameter_optimization_for_model(self, model_config: ModelConfig, study_name: str, data_config: DataConfig, 
-                                            storage_path: str = None) -> Dict[str, Any]:
-        """Run hyperparameter optimization for a single model."""
-        config_settings = self.config.settings
-        runner_ui = self.ui_config["experiment_runner"]
-        
-        start_time = self.metrics_collector.start_timer()
-        
-        # Create optimization config using the factory - signature changed
-        opt_config_dict = AlgorithmConfigFactory.create_optimization_config(
-            model_config.name,
-            config_settings["opt_trials"],
-            storage_path
-        )
-        
-        opt_config = OptimizationConfig(**opt_config_dict)
-        
-        config = ExperimentConfig(
-            mode="optimize",
-            run_config=RunConfig(
-                smoke_test=True,
-                study_name=f"{study_name}_{model_config.name.lower()}",
-                logger_callback=self.logger.log
-            ),
-            data_config=data_config,
-            training_config=TrainingConfig(
-                epochs=config_settings["opt_epochs"],
-                eval_interval=config_settings["opt_eval_interval"]
-            ),
-            optimization_config=opt_config
-        )
-        
-        spinner_description = runner_ui["optimization_spinner"].format(model_name=model_config.name)
-        progress_settings = self.ui_config["progress_settings"]
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=progress_settings["transient"],
-        ) as progress:
-            progress.add_task(description=spinner_description, total=None)
-            try:
-                result = run_optimization(config)
-            except Exception as e:
-                self._handle_dataset_error(e, data_config)
-        
-        elapsed_time = self.metrics_collector.end_timer(start_time)
-        self.metrics_collector.record_timing(f"optimization_{model_config.name}", elapsed_time)
-        completion_message = runner_ui["optimization_completion"].format(model_name=model_config.name, elapsed_time=elapsed_time)
-        console.print(f"[dim]{completion_message}[/dim]")
-        
-        return result
-    
-    def _run_trial(self, trial: optuna.trial.Trial, model_config: ModelConfig, study_name: str, data_config: DataConfig) -> float:
-        """Execute a single trial for a given model."""
-        config_settings = self.config.settings
-
-        # Suggest hyperparameters from the model's specific search space
-        params = {}
-        model_search_space = self.config.models[model_config.name].get("search_space", {})
-
-        # The parameters can be under 'hrem_params' or 'hrm_params'
-        param_section_key = next(iter(model_search_space), None)
-        if not param_section_key:
-            # If no search space is defined for this model, we can't optimize it.
-            # This can be a valid case for baseline models not meant to be optimized.
-            return float('inf')
-
-        param_definitions = model_search_space[param_section_key]
-
-        for name, definition in param_definitions.items():
-            param_type = definition['type']
-            if self.config.mode == DemoMode.FAST:
-                if 'smoke_choices' in definition:
-                    params[name] = trial.suggest_categorical(name, definition['smoke_choices'])
-                elif 'smoke_low' in definition and 'smoke_high' in definition:
-                    params[name] = trial.suggest_int(name, definition['smoke_low'], definition['smoke_high'])
-                else: # Fallback for smoke mode if specific smoke params not defined
-                    params[name] = trial.suggest_categorical(name, definition['choices']) if param_type == 'categorical' else trial.suggest_int(name, definition['low'], definition['high'])
-            else:
-                if param_type == "categorical":
-                    params[name] = trial.suggest_categorical(name, definition['choices'])
-                elif param_type == "int":
-                    params[name] = trial.suggest_int(name, definition['low'], definition['high'])
-
-        # Create a temporary model config for this trial
-        trial_model_config = model_config.model_copy(deep=True)
-        if "hrem" in trial_model_config.algorithm_class.lower():
-            trial_model_config.hrem_params = HREMParams(**params)
-        else:
-            trial_model_config.arch_overrides = params
-
-        # Create a minimal experiment config for run_single_model
-        try:
-            metrics = run_single_model(
-                run_config=RunConfig(smoke_test=(self.config.mode == DemoMode.FAST)),
-                data_config=data_config,
-                model_config=trial_model_config,
-                training_config=TrainingConfig(
-                    epochs=config_settings["opt_epochs"],
-                    eval_interval=config_settings["opt_eval_interval"]
-                ),
-                run_identifier=f"trial_{trial.number}"
-            )
-            loss = metrics.get('all/lm_loss', float('inf'))
-            return float(loss) if loss is not None else float('inf')
-        except (subprocess.CalledProcessError, FileNotFoundError, RuntimeError) as e:
-            # Suppress errors for pruned trials
-            raise optuna.TrialPruned()
 
     def run_hyperparameter_optimization(self, study_name: str, data_config: DataConfig, model_configs: List[ModelConfig],
                                   storage_path: str = None) -> Dict[str, Any]:
@@ -284,18 +175,55 @@ class ExperimentRunner:
         console.print(display_ui["optimization_advantage"])
         
         start_time = self.metrics_collector.start_timer()
-        
-        studies = {}
-        models_to_optimize = []
-        for mc in model_configs:
-            if self.config.models[mc.name].get("search_space"):
-                studies[mc.name] = optuna.create_study(
-                    study_name=f"{study_name}_{mc.name}",
-                    storage=storage_path,
-                    direction="minimize",
-                    load_if_exists=True
+
+        # This is a nested function now, captures necessary context
+        def _run_trial(trial: optuna.trial.Trial, model_config: ModelConfig) -> float:
+            """Execute a single trial for a given model."""
+            config_settings = self.config.settings
+            params = {}
+            model_search_space = self.config.models[model_config.name].get("search_space", {})
+            param_section_key = next(iter(model_search_space), None)
+            if not param_section_key:
+                return float('inf')
+
+            param_definitions = model_search_space[param_section_key]
+            for name, definition in param_definitions.items():
+                param_type = definition['type']
+                if self.config.mode == DemoMode.FAST:
+                    if 'smoke_choices' in definition:
+                        params[name] = trial.suggest_categorical(name, definition['smoke_choices'])
+                    elif 'smoke_low' in definition and 'smoke_high' in definition:
+                        params[name] = trial.suggest_int(name, definition['smoke_low'], definition['smoke_high'])
+                    else:
+                        params[name] = trial.suggest_categorical(name, definition['choices']) if param_type == 'categorical' else trial.suggest_int(name, definition['low'], definition['high'])
+                else:
+                    if param_type == "categorical":
+                        params[name] = trial.suggest_categorical(name, definition['choices'])
+                    elif param_type == "int":
+                        params[name] = trial.suggest_int(name, definition['low'], definition['high'])
+
+            trial_model_config = model_config.model_copy(deep=True)
+            if "hrem" in trial_model_config.algorithm_class.lower():
+                trial_model_config.hrem_params = HREMParams(**params)
+            else:
+                trial_model_config.arch_overrides = params
+
+            try:
+                metrics = run_single_model(
+                    run_config=RunConfig(smoke_test=(self.config.mode == DemoMode.FAST)),
+                    data_config=data_config, model_config=trial_model_config,
+                    training_config=TrainingConfig(epochs=config_settings["opt_epochs"], eval_interval=config_settings["opt_eval_interval"]),
+                    run_identifier=f"trial_{trial.number}"
                 )
-                models_to_optimize.append(mc)
+                loss = metrics.get('all/lm_loss', float('inf'))
+                return float(loss) if loss is not None else float('inf')
+            except (subprocess.CalledProcessError, FileNotFoundError, RuntimeError) as e:
+                raise optuna.TrialPruned()
+
+        studies = {}
+        models_to_optimize = [mc for mc in model_configs if self.config.models[mc.name].get("search_space")]
+        for mc in models_to_optimize:
+            studies[mc.name] = optuna.create_study(study_name=f"{study_name}_{mc.name}", storage=storage_path, direction="minimize", load_if_exists=True)
 
         if not models_to_optimize:
             console.print("[yellow]No models with defined search spaces to optimize.[/yellow]")
@@ -305,7 +233,6 @@ class ExperimentRunner:
         table.add_column("Model", style="cyan", no_wrap=True)
         table.add_column("Best Value", style="magenta")
         table.add_column("Best Params", style="green")
-        
         model_rows = {mc.name: i for i, mc in enumerate(models_to_optimize)}
         for mc in models_to_optimize:
             table.add_row(mc.name, "N/A", "N/A")
@@ -314,12 +241,10 @@ class ExperimentRunner:
         with Live(table, console=console, screen=False, refresh_per_second=4) as live:
             for trial_num in range(n_trials):
                 for model_config in models_to_optimize:
-                    model_name = model_config.name
-                    study = studies[model_name]
-
+                    study = studies[model_config.name]
                     trial = study.ask()
                     try:
-                        value = self._run_trial(trial, model_config, study_name, data_config)
+                        value = _run_trial(trial, model_config)
                         study.tell(trial, value)
                     except optuna.TrialPruned:
                         study.tell(trial, state=optuna.trial.TrialState.PRUNED)
@@ -328,7 +253,7 @@ class ExperimentRunner:
                     if best_trial_info:
                         best_value = f"{best_trial_info['value']:.4f}"
                         best_params_str = ", ".join(f"{k}={v}" for k, v in best_trial_info['params'].items())
-                        table.rows[model_rows[model_name]]._cells = [model_name, best_value, best_params_str]
+                        table.rows[model_rows[model_config.name]]._cells = [model_config.name, best_value, best_params_str]
                     live.update(table)
 
         optimization_results = {}
@@ -337,11 +262,7 @@ class ExperimentRunner:
                 study = studies[mc.name]
                 best_trial_info = self._get_best_trial_info(study)
                 if best_trial_info:
-                    optimization_results[mc.name] = {
-                        "best_trial": best_trial_info["number"],
-                        "best_params": best_trial_info["params"],
-                        "best_value": best_trial_info["value"],
-                    }
+                    optimization_results[mc.name] = {"best_trial": best_trial_info["number"], "best_params": best_trial_info["params"], "best_value": best_trial_info["value"]}
                 else:
                     optimization_results[mc.name] = {}
             else:
@@ -351,7 +272,76 @@ class ExperimentRunner:
         self.metrics_collector.record_timing("optimization_total", elapsed_time)
         
         return optimization_results
-    
+
+    def _get_default_params(self, model_name: str) -> Dict[str, Any]:
+        """Extracts default parameters for a model from its search space."""
+        params = {}
+        model_search_space = self.config.models[model_name].get("search_space", {})
+        param_section_key = next(iter(model_search_space), None)
+        if not param_section_key:
+            return {} # No search space, so no default params to extract
+
+        param_definitions = model_search_space[param_section_key]
+        for name, definition in param_definitions.items():
+            if self.config.mode == DemoMode.FAST and 'smoke_choices' in definition:
+                params[name] = definition['smoke_choices'][0]
+            elif self.config.mode == DemoMode.FAST and 'smoke_low' in definition:
+                params[name] = definition['smoke_low']
+            elif 'choices' in definition:
+                params[name] = definition['choices'][0] # Take the first choice as default
+            elif 'low' in definition:
+                params[name] = definition['low'] # Take the lower bound as default
+        return params
+
+    def run_baseline_evaluation(self, model_configs: List[ModelConfig], data_config: DataConfig) -> Dict[str, Any]:
+        """Run a baseline evaluation for each model with default parameters."""
+        display_ui = self.ui_config["main_display"]
+        runner_ui = self.ui_config["experiment_runner"]
+
+        self.results_displayer.display_iteration_header(display_ui["baseline_header"],
+                                              display_ui["baseline_description"].format(dataset=data_config.dataset))
+
+        baseline_results = {}
+        config_settings = self.config.settings
+
+        for model_config in model_configs:
+            start_time = self.metrics_collector.start_timer()
+
+            # Use default parameters for the baseline run
+            params = self._get_default_params(model_config.name)
+
+            # Create a temporary model config for this baseline run
+            baseline_model_config = model_config.model_copy(deep=True)
+            if "hrem" in baseline_model_config.algorithm_class.lower() and params:
+                baseline_model_config.hrem_params = HREMParams(**params)
+            elif params:
+                baseline_model_config.arch_overrides = params
+
+            spinner_description = runner_ui["baseline_spinner"].format(model_name=model_config.name)
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as progress:
+                progress.add_task(description=spinner_description, total=None)
+                try:
+                    metrics = run_single_model(
+                        run_config=RunConfig(smoke_test=(self.config.mode == DemoMode.FAST)),
+                        data_config=data_config,
+                        model_config=baseline_model_config,
+                        training_config=TrainingConfig(
+                            epochs=config_settings["final_epochs"], # Using final epochs for a solid baseline
+                            eval_interval=config_settings["final_eval_interval"]
+                        ),
+                        run_identifier=f"baseline_{model_config.name}"
+                    )
+                    baseline_results[model_config.name] = metrics
+                except Exception as e:
+                    self._handle_dataset_error(e, data_config)
+
+            elapsed_time = self.metrics_collector.end_timer(start_time)
+            self.metrics_collector.record_timing(f"baseline_{model_config.name}", elapsed_time)
+            completion_message = runner_ui["baseline_completion"].format(model_name=model_config.name, elapsed_time=elapsed_time)
+            console.print(f"[dim]{completion_message}[/dim]")
+
+        return baseline_results
+
     def run_final_evaluation(self, optimized_results: Dict[str, Any], baseline_model_configs: List[ModelConfig], study_name: str, data_config: DataConfig) -> Dict[str, Any]:
         """Run final evaluation with all optimized models."""
         display_ui = self.ui_config["main_display"]
@@ -365,6 +355,7 @@ class ExperimentRunner:
         start_time = self.metrics_collector.start_timer()
         
         final_model_configs = []
+        # Add optimized models
         for model_name, opt_result in optimized_results.items():
             if opt_result and "best_params" in opt_result:
                 baseline_config = next((c for c in baseline_model_configs if c.name == model_name), None)
@@ -377,11 +368,12 @@ class ExperimentRunner:
                         optimized_config = ModelConfig(name=f"{model_name}_best", algorithm_class=baseline_config.algorithm_class,
                                                    base_arch_config=baseline_config.base_arch_config, arch_overrides=opt_result["best_params"] or {})
                     final_model_configs.append(optimized_config)
-        
+
+        # Add baseline models that were not optimized
         for config in baseline_model_configs:
-            if config.name not in optimized_results:
+            if config.name not in optimized_results or not optimized_results[config.name]:
                 final_model_configs.append(config)
-        
+
         if not final_model_configs:
             console.print(runner_ui["no_models_to_evaluate"])
             return {}
@@ -498,7 +490,7 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         for bullet in display_ui["approach_bullets"]:
             console.print(bullet)
         
-        runner = ExperimentRunner(demo_config, results_displayer)
+        runner = DemoRunner(demo_config, results_displayer)
         
         if not storage_path:
             storage_path = demo_config.paths["default_optimization_db"]
@@ -507,24 +499,39 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         db_path = storage_path.split("///")[1]
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
-        optimization_results = runner.run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config, model_configs, storage_path=storage_path)
-        
-        for model_name, opt_result in optimization_results.items():
-            display_optimization_results(model_name, opt_result)
-        
+        # *** New workflow starts here ***
+        baseline_results = runner.run_baseline_evaluation(model_configs, selected_challenge.data_config)
+        results_displayer.display_model_detailed_stats(display_ui["baseline_results_title"], baseline_results)
+
+        optimization_results = {}
         if interactive:
-            try:
-                input(display_ui["press_enter_evaluation"])
-            except EOFError:
-                pass
+            proceed = Prompt.ask(display_ui["ask_for_optimization"], choices=["y", "n"], default="y")
+            if proceed == "y":
+                optimization_results = runner.run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config, model_configs, storage_path=storage_path)
+                for model_name, opt_result in optimization_results.items():
+                    display_optimization_results(model_name, opt_result)
+        else: # Non-interactive mode runs optimization by default
+            optimization_results = runner.run_hyperparameter_optimization("cli_demo_optimization", selected_challenge.data_config, model_configs, storage_path=storage_path)
+            for model_name, opt_result in optimization_results.items():
+                display_optimization_results(model_name, opt_result)
+
+        if interactive and not optimization_results:
+             # If user skipped optimization, there's no final evaluation to run
+            console.print(display_ui["skipping_final_eval"])
+        else:
+            if interactive:
+                try:
+                    input(display_ui["press_enter_evaluation"])
+                except EOFError:
+                    pass
+
+            final_results = runner.run_final_evaluation(optimization_results, model_configs, "cli_demo_final", selected_challenge.data_config)
+            results_displayer.display_model_detailed_stats(display_ui["best_results_title"], final_results)
+            results_displayer.display_final_leader(final_results)
+            results_displayer.display_final_comparison(display_ui["final_comparison_title"], final_results)
         
-        final_results = runner.run_final_evaluation(optimization_results, model_configs, "cli_demo_final", selected_challenge.data_config)
-        results_displayer.display_model_detailed_stats(display_ui["best_results_title"], final_results)
-        
-        results_displayer.display_final_leader(final_results)
         runner.display_timing_summary()
         results_displayer.display_iteration_header(display_ui["demo_completed_title"])
-        results_displayer.display_final_comparison(display_ui["final_comparison_title"], final_results)
         
         console.print(display_ui["key_insights_title"])
         for item in display_ui["key_insights_items"]:

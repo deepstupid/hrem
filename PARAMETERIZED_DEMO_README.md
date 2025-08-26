@@ -37,3 +37,4 @@ The script will optimize all specified models and display comprehensive results 
 - Performance improvements
 - Cost-benefit analysis
 - Final comparison of all models
+- Timing metrics for all operations

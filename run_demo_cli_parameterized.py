@@ -59,6 +59,9 @@ from demo_utils import (
     display_optimization_results
 )
 
+# Import metrics collector
+from demo_metrics import MetricsCollector
+
 # Import configuration
 from demo_config import AlgorithmConfigFactory, DemoMode, get_demo_config
 
@@ -83,16 +86,14 @@ class ChallengeSelector:
     """Handles challenge selection and display."""
     
     @staticmethod
-    def display_challenge_menu() -> Challenge:
-        """Display a menu for selecting a challenge and return the selected challenge."""
+    def _display_challenge_list(challenges: List[Challenge]):
+        """Display the list of challenges grouped by difficulty."""
         difficulty_display = CHALLENGE_SELECTOR_PARAMS["difficulty_display"]
         hardware_icon = CHALLENGE_SELECTOR_PARAMS["hardware_icon"]
         duration_icon = CHALLENGE_SELECTOR_PARAMS["duration_icon"]
         
         console.clear()
         console.print(Panel(CHALLENGE_SELECTOR_PARAMS["title"], expand=False))
-        
-        challenges = get_all_challenges_sorted()
         
         # Display challenges grouped by difficulty
         for difficulty in [ChallengeDifficulty.BEGINNER, ChallengeDifficulty.INTERMEDIATE, 
@@ -106,8 +107,10 @@ class ChallengeSelector:
                     console.print(f"  {global_index:2d}. [cyan]{challenge.name}[/cyan]")
                     console.print(f"      [dim]{challenge.description}[/dim]")
                     console.print(f"      {hardware_icon}  {challenge.recommended_hardware} | {duration_icon}  {challenge.expected_duration}")
-        
-        # Get user selection
+    
+    @staticmethod
+    def _get_user_selection(challenges: List[Challenge]) -> Challenge:
+        """Get user selection from the challenge list."""
         while True:
             try:
                 choice = Prompt.ask(CHALLENGE_SELECTOR_PARAMS["prompt"])
@@ -127,6 +130,13 @@ class ChallengeSelector:
             except KeyboardInterrupt:
                 console.print(CHALLENGE_SELECTOR_PARAMS["exit_message"])
                 sys.exit(0)
+    
+    @staticmethod
+    def display_challenge_menu() -> Challenge:
+        """Display a menu for selecting a challenge and return the selected challenge."""
+        challenges = get_all_challenges_sorted()
+        ChallengeSelector._display_challenge_list(challenges)
+        return ChallengeSelector._get_user_selection(challenges)
 
 class ExperimentRunner:
     """Handles running the different phases of the experiment."""
@@ -134,6 +144,7 @@ class ExperimentRunner:
     def __init__(self, demo_config):
         self.config = demo_config
         self.logger = DemoLogger()
+        self.metrics_collector = MetricsCollector()
     
     def _handle_dataset_error(self, e: Exception, data_config: DataConfig):
         """Handle dataset-related errors more gracefully."""
@@ -151,6 +162,9 @@ class ExperimentRunner:
                                             storage_path: str = None) -> Dict[str, Any]:
         """Run hyperparameter optimization for a single model."""
         config_settings = self.config.experiment_settings
+        
+        # Record timing
+        start_time = self.metrics_collector.start_timer()
         
         # Create optimization config using the factory
         opt_config_dict = AlgorithmConfigFactory.create_optimization_config(
@@ -178,7 +192,6 @@ class ExperimentRunner:
             optimization_config=opt_config
         )
         
-        start_time = time.time()
         spinner_description = EXPERIMENT_RUNNER_PARAMS["optimization_spinner"].format(model_name=model_config.name)
         from demo_parameters import PROGRESS_SETTINGS
         with Progress(
@@ -192,7 +205,8 @@ class ExperimentRunner:
             except Exception as e:
                 self._handle_dataset_error(e, data_config)
         
-        elapsed_time = time.time() - start_time
+        elapsed_time = self.metrics_collector.end_timer(start_time)
+        self.metrics_collector.record_timing(f"optimization_{model_config.name}", elapsed_time)
         completion_message = EXPERIMENT_RUNNER_PARAMS["optimization_completion"].format(model_name=model_config.name, elapsed_time=elapsed_time)
         console.print(f"[dim]{completion_message}[/dim]")
         
@@ -206,11 +220,17 @@ class ExperimentRunner:
         console.print(DEMO_DISPLAY_PARAMS["optimization_advantage"])
         console.print()
         
+        # Record timing for overall optimization
+        start_time = self.metrics_collector.start_timer()
+        
         # Run optimization for each model
         optimization_results = {}
         for model_config in model_configs:
             result = self.run_hyperparameter_optimization_for_model(model_config, study_name, data_config, storage_path=storage_path)
             optimization_results[model_config.name] = result
+        
+        elapsed_time = self.metrics_collector.end_timer(start_time)
+        self.metrics_collector.record_timing("optimization_total", elapsed_time)
         
         return optimization_results
     
@@ -220,6 +240,9 @@ class ExperimentRunner:
                                DEMO_DISPLAY_PARAMS["evaluation_description"].format(dataset=data_config.dataset))
         
         config_settings = self.config.experiment_settings
+        
+        # Record timing
+        start_time = self.metrics_collector.start_timer()
         
         # Create model configurations with optimized parameters
         final_model_configs = []
@@ -296,7 +319,6 @@ class ExperimentRunner:
             evaluation_config=EvaluationConfig(**eval_config_dict)
         )
         
-        start_time = time.time()
         from demo_parameters import PROGRESS_SETTINGS
         with Progress(
             SpinnerColumn(),
@@ -309,11 +331,16 @@ class ExperimentRunner:
             except Exception as e:
                 self._handle_dataset_error(e, data_config)
                 
-        elapsed_time = time.time() - start_time
+        elapsed_time = self.metrics_collector.end_timer(start_time)
+        self.metrics_collector.record_timing("evaluation_total", elapsed_time)
         completion_message = EXPERIMENT_RUNNER_PARAMS["evaluation_completion"].format(elapsed_time=elapsed_time)
         console.print(f"[dim]{completion_message}[/dim]")
             
         return results.get("results", {})
+    
+    def display_timing_summary(self):
+        """Display a summary of all recorded timings."""
+        self.metrics_collector.display_timing_summary()
 
 def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: str = None, model_names: List[str] = None,
          storage_path: str = None):
@@ -436,6 +463,9 @@ def main(is_fast_mode: bool = False, interactive: bool = False, challenge_key: s
         
         # Show final leader
         ResultsDisplay.display_final_leader(final_results)
+        
+        # Display timing summary
+        runner.display_timing_summary()
         
         # Summary
         ResultsDisplay.display_iteration_header(DEMO_DISPLAY_PARAMS["demo_completed_title"])

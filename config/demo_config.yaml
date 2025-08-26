@@ -110,11 +110,11 @@ experiment_settings:
     final_epochs: 400
     final_eval_interval: 50
   fast_mode:
-    opt_trials: 3
-    opt_epochs: 50
-    opt_eval_interval: 25
-    final_epochs: 50
-    final_eval_interval: 25
+    opt_trials: 5
+    opt_epochs: 1
+    opt_eval_interval: 1
+    final_epochs: 1
+    final_eval_interval: 1
 
 # 4. Model Configurations
 models:

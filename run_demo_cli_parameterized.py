@@ -142,6 +142,18 @@ class ExperimentRunner:
         self.ui_config = demo_config.ui
         self.results_displayer = results_displayer
 
+    def _get_best_trial_info(self, study: optuna.Study) -> Optional[Dict[str, Any]]:
+        """Safely retrieves information about the best trial from a study."""
+        try:
+            best_trial = study.best_trial
+            return {
+                "number": best_trial.number,
+                "params": best_trial.params,
+                "value": best_trial.value,
+            }
+        except ValueError:
+            return None
+
     def _handle_dataset_error(self, e: Exception, data_config: DataConfig):
         """Handle dataset-related errors more gracefully."""
         runner_ui = self.ui_config["experiment_runner"]
@@ -312,9 +324,10 @@ class ExperimentRunner:
                     except optuna.TrialPruned:
                         study.tell(trial, state=optuna.trial.TrialState.PRUNED)
 
-                    if study.best_trial:
-                        best_value = f"{study.best_trial.value:.4f}"
-                        best_params_str = ", ".join(f"{k}={v}" for k, v in study.best_trial.params.items())
+                    best_trial_info = self._get_best_trial_info(study)
+                    if best_trial_info:
+                        best_value = f"{best_trial_info['value']:.4f}"
+                        best_params_str = ", ".join(f"{k}={v}" for k, v in best_trial_info['params'].items())
                         table.rows[model_rows[model_name]]._cells = [model_name, best_value, best_params_str]
                     live.update(table)
 
@@ -322,12 +335,15 @@ class ExperimentRunner:
         for mc in model_configs:
             if mc.name in studies:
                 study = studies[mc.name]
-                if study.best_trial:
+                best_trial_info = self._get_best_trial_info(study)
+                if best_trial_info:
                     optimization_results[mc.name] = {
-                        "best_trial": study.best_trial.number,
-                        "best_params": study.best_trial.params,
-                        "best_value": study.best_trial.value,
+                        "best_trial": best_trial_info["number"],
+                        "best_params": best_trial_info["params"],
+                        "best_value": best_trial_info["value"],
                     }
+                else:
+                    optimization_results[mc.name] = {}
             else:
                 optimization_results[mc.name] = {}
 

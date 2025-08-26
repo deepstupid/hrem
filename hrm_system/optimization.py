@@ -1,86 +1,92 @@
-import subprocess
-from functools import partial
-from typing import Dict, Any, List
-from pathlib import Path
-import optuna
-import yaml
+"""Core hyperparameter optimization logic for the HRM system."""
 
-from .config import ExperimentConfig, ModelConfig, DataConfig
-from .reporting import aggregate_metrics, generate_optimization_report
-from adaptive_demo_runner import AdaptiveDemoRunner
-from demo_config import get_demo_config, PatienceLevel
-from demo_runner import DemoRunner
-from demo_metrics import MetricsCollector
-from demo_utils import ResultsDisplayer, UIConfig
+from typing import Dict, Any
+import optuna
+
+from .config import ExperimentConfig, HREMParams
+from .runner import run_single_model
+from .reporting import ScientificReporter
 
 def run_optimization(config: ExperimentConfig) -> Dict[str, Any]:
     """
-    Runs hyperparameter optimization using the AdaptiveDemoRunner.
+    Runs hyperparameter optimization for a single model.
     """
     if config.mode != "optimize":
         raise ValueError("ExperimentConfig must be in 'optimize' mode.")
 
-    run_config = config.run_config
     opt_config = config.optimization_config
-    logger = run_config.logger_callback or print
+    if not opt_config or not opt_config.model_to_optimize or not opt_config.search_space:
+        raise ValueError("Optimization mode requires a model to optimize and a search space.")
 
-    logger(f"--- Starting Adaptive Optimization: {run_config.study_name} ---")
+    def objective(trial: optuna.trial.Trial) -> float:
+        """The objective function for Optuna to optimize."""
+        model_config = opt_config.model_to_optimize
+        search_space = opt_config.search_space or {}
 
-    # 1. Create a DemoConfig based on the ExperimentConfig
-    patience = PatienceLevel.LOW if run_config.smoke_test else PatienceLevel.MEDIUM
-    demo_config = get_demo_config(patience=patience)
+        params = {}
+        # This assumes a flat search space, which is what we have now.
+        # If the search space becomes nested, this will need to be updated.
+        param_definitions = search_space.get(f"{model_config.name.lower()}_params", {})
 
-    # Override settings from ExperimentConfig
-    demo_config.settings["max_trials_per_model"] = opt_config.n_trials
+        for param_name, definition in param_definitions.items():
+            param_type = definition.get("type")
+            if config.run_config.smoke_test and "smoke_choices" in definition:
+                params[param_name] = trial.suggest_categorical(param_name, definition["smoke_choices"])
+            elif config.run_config.smoke_test and "smoke_low" in definition:
+                params[param_name] = trial.suggest_int(param_name, definition["smoke_low"], definition["smoke_high"])
+            elif param_type == "categorical":
+                params[param_name] = trial.suggest_categorical(param_name, definition["choices"])
+            elif param_type == "int":
+                params[param_name] = trial.suggest_int(param_name, definition["low"], definition["high"])
 
-    # The TUI passes a logger callback, which we can use to redirect output
-    # to the TUI log widget. We need a simple way to display rich content from the runner.
-    # For now, we will just use the console.
-    # A proper implementation would use a queue to send rich renderables to the TUI.
-    ui_config = UIConfig(main_display=demo_config.ui)
-    results_displayer = ResultsDisplayer(ui_config)
+        trial_model_config = model_config.model_copy(deep=True)
+        if "hrem" in trial_model_config.algorithm_class.lower():
+            trial_model_config.hrem_params = HREMParams(**params)
+        else:
+            trial_model_config.arch_overrides = params
 
-    # 2. Instantiate the AdaptiveDemoRunner
-    runner = AdaptiveDemoRunner(
-        config=demo_config,
-        results_displayer=results_displayer,
-        metrics_collector=MetricsCollector(),
-        ui_config=ui_config.main_display,
+        try:
+            metrics = run_single_model(
+                run_config=config.run_config,
+                data_config=config.data_config,
+                model_config=trial_model_config,
+                training_config=config.training_config,
+                run_identifier=f"trial_{trial.number}"
+            )
+            # Optuna can minimize, so we return a value that should be minimized.
+            return metrics.get('all/lm_loss', float('inf'))
+        except Exception as e:
+            # Log the error and let Optuna handle it as a pruned trial.
+            print(f"Trial {trial.number} failed with error: {e}")
+            raise optuna.TrialPruned()
+
+    study = optuna.create_study(
+        study_name=config.run_config.study_name,
+        storage=opt_config.storage,
+        direction="minimize",
+        load_if_exists=True
     )
-    
-    # 3. Prepare model configs for the runner
-    # The adaptive runner can optimize multiple models at once.
-    # The old optimization function was designed for one model at a time.
-    models_to_optimize = [opt_config.model_to_optimize]
 
-    # 4. Run the optimization
-    optimization_results = runner.run_hyperparameter_optimization(
-        study_name=run_config.study_name,
-        data_config=config.data_config,
-        model_configs=models_to_optimize,
-        storage_path=opt_config.storage,
+    study.optimize(
+        objective,
+        n_trials=opt_config.n_trials,
         n_jobs=opt_config.n_jobs,
-        rich_callback=logger
+        callbacks=[config.run_config.logger_callback] if config.run_config.logger_callback else None,
     )
 
-    # 5. Adapt results to the expected format
-    # The adaptive runner returns a dictionary keyed by model name.
-    # We need to extract the results for the single model we optimized.
-    model_name = opt_config.model_to_optimize.name
-    result = optimization_results.get(model_name, {})
-
-    if not result:
-        logger("[bold yellow]No optimization results found.[/bold yellow]")
-        return {}
-
-    final_results = {
-        "best_trial": result.get("best_trial"),
-        "best_params": result.get("best_params"),
-        "best_value": result.get("best_value"),
-        "report_path": run_config.output_dir / model_name / "scientific_report.md"
+    # After optimization, prepare and return the results
+    best_trial = study.best_trial
+    results = {
+        "best_trial": best_trial.number,
+        "best_params": best_trial.params,
+        "best_value": best_trial.value,
     }
 
-    logger(f"Best trial for {model_name}: {final_results['best_trial']} with value: {final_results['best_value']:.4f}")
-    logger(f"Scientific report generated at: {final_results['report_path']}")
+    if config.run_config.output_dir:
+        report_path = ScientificReporter.generate_optimization_report(
+            study=study,
+            output_dir=config.run_config.output_dir / opt_config.model_to_optimize.name
+        )
+        results["report_path"] = str(report_path)
 
-    return final_results
+    return results

@@ -1,0 +1,37 @@
+challenges:
+  - name: "Smoke Test"
+    id: "smoke_test"
+    description: "A quick test to ensure the system is working correctly."
+    difficulty: "BEGINNER"
+    hardware: "Low"
+    duration: "~1 min"
+    dataset:
+      dataset: "synthetic"
+      synthetic_task: "copy"
+    models: ["HRM", "HREM"]
+    patience_level: "low"
+    optimization: true
+
+  - name: "ARC Basic"
+    id: "arc_basic"
+    description: "A baseline evaluation on the ARC dataset."
+    difficulty: "INTERMEDIATE"
+    hardware: "Medium"
+    duration: "~15 mins"
+    dataset:
+      dataset: "arc"
+    models: ["HRM", "HREM"]
+    patience_level: "medium"
+    optimization: false
+
+  - name: "ARC with Optimization"
+    id: "arc_optimized"
+    description: "Full optimization and evaluation on the ARC dataset."
+    difficulty: "ADVANCED"
+    hardware: "High"
+    duration: "~1 hour"
+    dataset:
+      dataset: "arc"
+    models: ["HRM", "HREM", "EnhancedHREM"]
+    patience_level: "high"
+    optimization: true

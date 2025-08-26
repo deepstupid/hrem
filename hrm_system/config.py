@@ -64,6 +64,27 @@ class EvaluationConfig(BaseModel):
     model_d: Optional[ModelConfig] = Field(None, description="The fourth model to compare.")
     model_e: Optional[ModelConfig] = Field(None, description="The fifth model to compare.")
 
+    def get_models(self) -> List[ModelConfig]:
+        """Returns a list of the configured models, filtering out None values."""
+        models = [self.model_a, self.model_b, self.model_c, self.model_d, self.model_e]
+        return [model for model in models if model is not None]
+
+    def set_models(self, models: List[ModelConfig]):
+        """Sets the models from a list, populating model_a, model_b, etc."""
+        self.clear_models()
+        model_fields = ["model_a", "model_b", "model_c", "model_d", "model_e"]
+        for i, model in enumerate(models):
+            if i < len(model_fields):
+                setattr(self, model_fields[i], model)
+
+    def clear_models(self):
+        """Resets all model fields to None."""
+        self.model_a = None
+        self.model_b = None
+        self.model_c = None
+        self.model_d = None
+        self.model_e = None
+
 class OptimizationConfig(BaseModel):
     """Configuration for the hyperparameter optimization mode."""
     n_trials: int = Field(10, description="Number of optimization trials.")

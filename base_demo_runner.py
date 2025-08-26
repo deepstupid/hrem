@@ -1,24 +1,14 @@
 """Base demo runner for the HRM/HREM demo system."""
 
 import time
-import subprocess
-from typing import Dict, Any, List, Optional
-import optuna
+from typing import Dict, Any, List
 from rich.console import Console
-from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich import box
-from rich.live import Live
 
 from demo_utils import DemoLogger, ResultsDisplay
 from demo_metrics import MetricsCollector
-from demo_config import PatienceLevel
 from hrm_system.config import (
     ExperimentConfig,
-    RunConfig,
-    DataConfig,
-    TrainingConfig,
-    EvaluationConfig,
     ModelConfig,
     HREMParams,
 )
@@ -30,156 +20,117 @@ console = Console()
 class DemoRunner:
     """Handles running the different phases of the demo."""
 
-    def __init__(self, demo_config, results_displayer):
-        self.config = demo_config
+    def __init__(self, config: ExperimentConfig, results_displayer: ResultsDisplay):
+        self.config = config
         self.logger = DemoLogger()
         self.metrics_collector = MetricsCollector()
-        self.ui_config = demo_config.ui
         self.results_displayer = results_displayer
+        # A bit of a hack to get the UI config, assuming it's passed via the logger
+        # In a real app, this would be handled more elegantly.
+        self.ui_config = getattr(results_displayer, 'ui_config', {})
 
-    def _handle_dataset_error(self, e: Exception, data_config: DataConfig):
+    def _handle_dataset_error(self, e: Exception):
         """Handle dataset-related errors more gracefully."""
-        runner_ui = self.ui_config["experiment_runner"]
+        runner_ui = self.ui_config.get("experiment_runner", {})
         if "No such file or directory" in str(e) and "raw-data" in str(e):
-            console.print(runner_ui["dataset_not_found_title"])
-            console.print(runner_ui["dataset_not_found_message"].format(dataset=data_config.dataset))
-            console.print(runner_ui["dataset_not_found_instructions"])
-            console.print(runner_ui["dataset_not_found_arc_instructions"])
+            console.print(runner_ui.get("dataset_not_found_title", "[bold red]Dataset not found![/bold red]"))
+            console.print(runner_ui.get("dataset_not_found_message", "Dataset not found").format(dataset=self.config.data_config.dataset))
+            console.print(runner_ui.get("dataset_not_found_instructions", "Please download the required dataset files."))
             raise SystemExit(1)
         else:
             raise e
 
-    def _get_default_params(self, model_name: str) -> Dict[str, Any]:
-        """Extracts default parameters for a model from its search space."""
-        params = {}
-        model_search_space = self.config.models[model_name].get("search_space", {})
-        param_section_key = next(iter(model_search_space), None)
-        if not param_section_key:
-            return {} # No search space, so no default params to extract
-
-        param_definitions = model_search_space[param_section_key]
-        for name, definition in param_definitions.items():
-            if self.config.patience == PatienceLevel.LOW and 'smoke_choices' in definition:
-                params[name] = definition['smoke_choices'][0]
-            elif self.config.patience == PatienceLevel.LOW and 'smoke_low' in definition:
-                params[name] = definition['smoke_low']
-            elif 'choices' in definition:
-                params[name] = definition['choices'][0] # Take the first choice as default
-            elif 'low' in definition:
-                params[name] = definition['low'] # Take the lower bound as default
-        return params
-
-    def run_baseline_evaluation(self, model_configs: List[ModelConfig], data_config: DataConfig) -> Dict[str, Any]:
+    def run_baseline_evaluation(self) -> Dict[str, Any]:
         """Run a baseline evaluation for each model with default parameters."""
-        display_ui = self.ui_config["main_display"]
-        runner_ui = self.ui_config["experiment_runner"]
+        display_ui = self.ui_config.get("main_display", {})
+        runner_ui = self.ui_config.get("experiment_runner", {})
 
-        self.results_displayer.display_iteration_header(display_ui["baseline_header"],
-                                              display_ui["baseline_description"].format(dataset=data_config.dataset))
+        self.results_displayer.display_iteration_header(
+            display_ui.get("baseline_header", "Baseline Evaluation"),
+            display_ui.get("baseline_description", "Running baseline...").format(dataset=self.config.data_config.dataset)
+        )
 
         baseline_results = {}
-        config_settings = self.config.settings
+        # The models to evaluate are in the evaluation_config
+        model_configs = self.config.evaluation_config.get_models()
 
         for model_config in model_configs:
             start_time = self.metrics_collector.start_timer()
 
-            # Use default parameters for the baseline run
-            params = self._get_default_params(model_config.name)
-
-            # Create a temporary model config for this baseline run
-            baseline_model_config = model_config.model_copy(deep=True)
-            if "hrem" in baseline_model_config.algorithm_class.lower() and params:
-                baseline_model_config.hrem_params = HREMParams(**params)
-            elif params:
-                baseline_model_config.arch_overrides = params
-
-            spinner_description = runner_ui["baseline_spinner"].format(model_name=model_config.name)
+            spinner_description = runner_ui.get("baseline_spinner", "Running...").format(model_name=model_config.name)
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as progress:
                 progress.add_task(description=spinner_description, total=None)
                 try:
                     metrics = run_single_model(
-                        run_config=RunConfig(smoke_test=(self.config.patience == PatienceLevel.LOW)),
-                        data_config=data_config,
-                        model_config=baseline_model_config,
-                        training_config=TrainingConfig(
-                            epochs=config_settings["baseline_epochs"],
-                            eval_interval=config_settings["baseline_eval_interval"]
-                        ),
+                        run_config=self.config.run_config,
+                        data_config=self.config.data_config,
+                        model_config=model_config,
+                        training_config=self.config.training_config,
                         run_identifier=f"baseline_{model_config.name}"
                     )
                     baseline_results[model_config.name] = metrics
                 except Exception as e:
-                    self._handle_dataset_error(e, data_config)
+                    self._handle_dataset_error(e)
 
             elapsed_time = self.metrics_collector.end_timer(start_time)
             self.metrics_collector.record_timing(f"baseline_{model_config.name}", elapsed_time)
-            completion_message = runner_ui["baseline_completion"].format(model_name=model_config.name, elapsed_time=elapsed_time)
+            completion_message = runner_ui.get("baseline_completion", "{model_name} done in {elapsed_time:.1f}s").format(
+                model_name=model_config.name, elapsed_time=elapsed_time
+            )
             console.print(f"[dim]{completion_message}[/dim]")
 
         return baseline_results
 
-    def run_final_evaluation(self, optimized_results: Dict[str, Any], baseline_model_configs: List[ModelConfig], study_name: str, data_config: DataConfig) -> Dict[str, Any]:
+    def run_final_evaluation(self, optimized_results: Dict[str, Any]) -> Dict[str, Any]:
         """Run final evaluation with all optimized models."""
-        display_ui = self.ui_config["main_display"]
-        runner_ui = self.ui_config["experiment_runner"]
-        progress_settings = self.ui_config["progress_settings"]
+        display_ui = self.ui_config.get("main_display", {})
+        runner_ui = self.ui_config.get("experiment_runner", {})
 
-        self.results_displayer.display_iteration_header(display_ui["evaluation_header"],
-                               display_ui["evaluation_description"].format(dataset=data_config.dataset))
+        self.results_displayer.display_iteration_header(
+            display_ui.get("evaluation_header", "Final Evaluation"),
+            display_ui.get("evaluation_description", "Running final eval...").format(dataset=self.config.data_config.dataset)
+        )
 
-        config_settings = self.config.settings
         start_time = self.metrics_collector.start_timer()
 
+        # Create a new ExperimentConfig for the final evaluation
+        final_eval_config = self.config.model_copy(deep=True)
+        final_eval_config.evaluation_config.clear_models()
+
         final_model_configs = []
-        # Add optimized models
+        baseline_models = self.config.evaluation_config.get_models()
+
         for model_name, opt_result in optimized_results.items():
             if opt_result and "best_params" in opt_result:
-                baseline_config = next((c for c in baseline_model_configs if c.name == model_name), None)
+                baseline_config = next((c for c in baseline_models if c.name == model_name), None)
                 if baseline_config:
                     if "hrem" in baseline_config.algorithm_class.lower():
-                        hrem_params = HREMParams(**opt_result["best_params"])
-                        optimized_config = ModelConfig(name=f"{model_name}_best", algorithm_class=baseline_config.algorithm_class,
-                                                   base_arch_config=baseline_config.base_arch_config, hrem_params=hrem_params)
+                        optimized_config = baseline_config.model_copy(update={"name": f"{model_name}_best", "hrem_params": HREMParams(**opt_result["best_params"])})
                     else:
-                        optimized_config = ModelConfig(name=f"{model_name}_best", algorithm_class=baseline_config.algorithm_class,
-                                                   base_arch_config=baseline_config.base_arch_config, arch_overrides=opt_result["best_params"] or {})
+                        optimized_config = baseline_config.model_copy(update={"name": f"{model_name}_best", "arch_overrides": opt_result["best_params"] or {}})
                     final_model_configs.append(optimized_config)
 
         # Add baseline models that were not optimized
-        for config in baseline_model_configs:
+        for config in baseline_models:
             if config.name not in optimized_results or not optimized_results[config.name]:
                 final_model_configs.append(config)
 
         if not final_model_configs:
-            console.print(runner_ui["no_models_to_evaluate"])
+            console.print(runner_ui.get("no_models_to_evaluate", "No models to evaluate."))
             return {}
 
-        eval_config_dict = {"n_runs": 1}
-        model_keys = ["model_a", "model_b", "model_c", "model_d", "model_e"]
-        for i, model_config in enumerate(final_model_configs):
-            if i < len(model_keys):
-                eval_config_dict[model_keys[i]] = model_config
-        for i in range(len(final_model_configs), len(model_keys)):
-            eval_config_dict[model_keys[i]] = None
+        final_eval_config.evaluation_config.set_models(final_model_configs)
 
-        config = ExperimentConfig(
-            mode="evaluate",
-            run_config=RunConfig(smoke_test=(self.config.patience == PatienceLevel.LOW), study_name=study_name, logger_callback=self.logger.log),
-            data_config=data_config,
-            training_config=TrainingConfig(epochs=config_settings["final_epochs"], eval_interval=config_settings["final_eval_interval"]),
-            evaluation_config=EvaluationConfig(**eval_config_dict)
-        )
-
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=progress_settings["transient"]) as progress:
-            progress.add_task(description=runner_ui["evaluation_spinner"], total=None)
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as progress:
+            progress.add_task(description=runner_ui.get("evaluation_spinner", "Running..."), total=None)
             try:
-                results = run_evaluation(config)
+                results = run_evaluation(final_eval_config)
             except Exception as e:
-                self._handle_dataset_error(e, data_config)
+                self._handle_dataset_error(e)
 
         elapsed_time = self.metrics_collector.end_timer(start_time)
         self.metrics_collector.record_timing("evaluation_total", elapsed_time)
-        completion_message = runner_ui["evaluation_completion"].format(elapsed_time=elapsed_time)
+        completion_message = runner_ui.get("evaluation_completion", "Done in {elapsed_time:.1f}s").format(elapsed_time=elapsed_time)
         console.print(f"[dim]{completion_message}[/dim]")
 
         return results.get("results", {})

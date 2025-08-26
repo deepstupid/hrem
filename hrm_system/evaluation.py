@@ -21,6 +21,7 @@ def run_evaluation(config: ExperimentConfig) -> Dict[str, Any]:
     logger(f"--- Starting Evaluation: {run_config.study_name} ---")
 
     all_metrics = {}
+    raw_metrics_by_model: Dict[str, List[Dict[str, Any]]] = {}
     models_to_run = [
         eval_config.model_a, eval_config.model_b, eval_config.model_c,
         eval_config.model_d, eval_config.model_e
@@ -53,7 +54,8 @@ def run_evaluation(config: ExperimentConfig) -> Dict[str, Any]:
             )
             metrics_list.append(metrics)
 
-        # Aggregate the metrics from all runs for this model
+        # Store raw and aggregated metrics
+        raw_metrics_by_model[model_config.name] = metrics_list
         aggregated = aggregate_metrics(metrics_list)
         all_metrics[model_config.name] = aggregated
         logger(f"Aggregated metrics for {model_config.name}: {aggregated}")
@@ -62,6 +64,7 @@ def run_evaluation(config: ExperimentConfig) -> Dict[str, Any]:
     logger("\n[bold blue]--- Generating Comparison Report ---[/bold blue]")
     report_path = generate_evaluation_report(
         all_metrics=all_metrics,
+        raw_metrics_by_model=raw_metrics_by_model,
         eval_config=eval_config,
         run_config=run_config
     )

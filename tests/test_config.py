@@ -10,8 +10,8 @@ def test_default_evaluation_config():
     assert config.mode == "evaluate"
     assert isinstance(config.evaluation_config, EvaluationConfig)
     assert config.optimization_config is None
-    assert config.evaluation_config.model_a.name == "HRM"
-    assert config.evaluation_config.model_b.name == "HREM"
+    assert config.evaluation_config.model_a is None
+    assert config.evaluation_config.model_b is None
 
 def test_optimization_config_creation():
     """

@@ -47,6 +47,8 @@ class TrainingConfig(BaseModel):
     puzzle_emb_weight_decay: float = 1.0
     beta1: float = 0.9
     beta2: float = 0.95
+    optimizer: Literal["Adam", "AdamW"] = Field("AdamW", description="The optimizer to use for training.")
+    optimizer_eps: float = Field(1e-8, description="The epsilon value for the optimizer.")
     seed: int = 0
     checkpoint_every_eval: bool = False
     eval_save_outputs: List[str] = Field(default_factory=list)

@@ -67,7 +67,9 @@ class HREMAlgorithm(TorchBaseAlgorithm):
 
         # Optimizers
         from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
-        from torch.optim import Adam
+        from torch.optim import Adam, AdamW
+
+        optimizer_class = Adam if self.training_config.optimizer == "Adam" else AdamW
         
         optimizers = [
             CastedSparseEmbeddingSignSGD_Distributed(
@@ -76,11 +78,12 @@ class HREMAlgorithm(TorchBaseAlgorithm):
                 weight_decay=self.training_config.puzzle_emb_weight_decay,
                 world_size=world_size,
             ),
-            Adam(
+            optimizer_class(
                 model.parameters(),
                 lr=0,
                 weight_decay=self.training_config.weight_decay,
                 betas=(self.training_config.beta1, self.training_config.beta2),
+                eps=self.training_config.optimizer_eps,
             ),
         ]
         optimizer_lrs = [self.training_config.puzzle_emb_lr, self.training_config.lr]

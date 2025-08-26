@@ -17,3 +17,4 @@ optuna-dashboard
 textual
 pytest
 click
+scipy

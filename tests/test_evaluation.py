@@ -13,6 +13,18 @@ def smoke_test_config():
         },
         data_config={
             "dataset": "synthetic"
+        },
+        evaluation_config={
+            "model_a": {
+                "name": "HRM",
+                "algorithm_class": "hrm_system.algorithms.hrm.HRMAlgorithm",
+                "base_arch_config": "hrm_v1"
+            },
+            "model_b": {
+                "name": "HREM",
+                "algorithm_class": "hrm_system.algorithms.hrem.HREMAlgorithm",
+                "base_arch_config": "hrem_v1"
+            }
         }
     )
 

@@ -1,0 +1,18 @@
+# Dummy search space for testing
+hrem_params:
+  m_loc:
+    type: int
+    low: 8
+    high: 16
+  d_mem:
+    type: int
+    low: 8
+    high: 16
+  top_k:
+    type: int
+    low: 2
+    high: 4
+  hidden_size:
+    type: int
+    low: 16
+    high: 32

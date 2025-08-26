@@ -52,14 +52,22 @@ def aggregate_metrics(metrics_list: List[Dict[str, Any]]) -> Dict[str, str]:
     return result
 
 
+from scientific_reporting import ScientificReporter
+
 def generate_evaluation_report(
     all_metrics: Dict[str, Dict[str, str]],
+    raw_metrics_by_model: Dict[str, List[Dict[str, Any]]],
     eval_config: EvaluationConfig,
     run_config: RunConfig,
 ) -> str:
     """
-    Generates a Markdown comparison report for the evaluation run.
+    Generates a Markdown comparison report and displays scientific analysis.
     """
+    # Display scientific analysis in the console
+    ScientificReporter.display_scientific_analysis(
+        final_results=all_metrics,
+        raw_results=raw_metrics_by_model
+    )
     study_name = run_config.study_name
     model_names = list(all_metrics.keys())
 

@@ -31,5 +31,7 @@ puzzle_emb_weight_decay: 0.01
 puzzle_emb_lr: 3e-3   # Higher learning rate for puzzle embeddings
 
 # Enhanced training parameters
+optimizer: "AdamW"
+optimizer_eps: 1e-5     # Epsilon for numerical stability, from enhanced_hrem.py
 use_amp: true         # Enable automatic mixed precision
 gradient_clip_norm: 1.0  # Gradient clipping for stability

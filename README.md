@@ -15,52 +15,43 @@ Building upon HRM, we introduce the Hierarchical Recurrent Execution Model (HREM
 
 These results underscore HRM/HREM's potential as a transformative advancement toward universal computation and general-purpose reasoning systems.
 
-## Quick Start with CLI Demo 🚀
+## Quick Start with the Unified CLI 🚀
 
-The easiest way to explore the capabilities of HRM and HREM is through our interactive command-line interface (CLI) demo:
+This project provides a unified command-line interface (CLI) for running evaluations, hyperparameter optimization, and interactive demonstrations.
 
-```bash
-python run_demo_cli.py
-```
+### Interactive Demonstration
 
-This will present you with a menu of pre-configured challenges ranging from simple synthetic tasks to complex real-world problems:
-
-- **Beginner**: Simple copy/reverse tasks for testing basic functionality
-- **Intermediate**: More complex synthetic tasks with data augmentation
-- **Advanced**: Real-world challenges like ARC, Sudoku, and Maze navigation
-- **Research**: Full-scale datasets for breakthrough research
-
-Each challenge is designed to work with different computational resources:
-- **Beginner**: Runs on any hardware (CPU or GPU)
-- **Intermediate**: Requires GPU for reasonable training time
-- **Advanced**: Requires significant GPU memory and compute
-- **Research**: Requires powerful multi-GPU setup
-
-### Fast Mode and Interactive Mode
-
-Add `--fast` flag for quick testing:
-```bash
-python run_demo_cli.py --fast
-```
-
-Add `--interactive` flag for step-by-step execution:
-```bash
-python run_demo_cli.py --interactive
-```
-
-### Parameterized CLI Demo
-
-We also provide a parameterized version of the CLI demo that allows you to specify which challenge and models to run:
+The easiest way to explore the capabilities of HRM and HREM is through the interactive demonstration mode. This mode guides you through challenge selection, baseline evaluation, hyperparameter optimization, and final comparison.
 
 ```bash
-# Run with specific challenge and models
-python run_demo_cli_parameterized.py --challenge-key "ARC Challenge" --models HRM HREM EnhancedHREM
-
-# Run in fast mode for quicker testing
-python run_demo_cli_parameterized.py --fast --challenge-key "ARC Challenge"
+python run.py demonstration --interactive
 ```
 
-See `PARAMETERIZED_DEMO_README.md` for more details on using the parameterized demo.
+You can also specify the challenge and models directly:
+
+```bash
+python run.py demonstration --challenge-key "ARC Challenge" -m HRM -m HREM -m EnhancedHREM
+```
+
+### Direct Evaluation
+
+To run a direct, non-interactive evaluation of one or more models, use the `evaluate` command:
+
+```bash
+# Evaluate HRM and HREM on the synthetic copy task
+python run.py evaluate --dataset synthetic --num-aug 0 -m HRM -m HREM
+
+# Evaluate EnhancedHREM on the ARC dataset with 100 augmentations and 3 runs
+python run.py evaluate --dataset arc --num-aug 100 --n-runs 3 -m EnhancedHREM
+```
+
+### Hyperparameter Optimization
+
+To run hyperparameter optimization for the HREM model, use the `optimize` command:
+
+```bash
+python run.py optimize --dataset arc --n-trials 50 --n-jobs 4
+```
 
 ## HRM vs HREM: Architectural Differences
 

@@ -69,7 +69,7 @@ def run_single_model(
         data_dir = f"data/{data_config.dataset}-full"
         num_aug = data_config.num_aug
 
-    data_config.path = data_dir
+    data_config.dataset_path = data_dir
 
     dataset_builder_script = f"dataset/build_{data_config.dataset}_dataset.py"
     if not os.path.exists(data_dir):
@@ -87,6 +87,9 @@ def run_single_model(
         logger(f"Building {data_config.dataset} dataset...")
         _run_dataset_builder(build_command, logger)
         logger(f"Dataset built successfully at {data_dir}")
+
+    # Update the dataset_path in the config
+    data_config.dataset_path = data_dir
 
     # 2. Instantiate and run the algorithm
     logger(f"Running model: {model_config.name} ({run_identifier})...")

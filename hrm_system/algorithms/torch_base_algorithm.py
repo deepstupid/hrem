@@ -86,9 +86,9 @@ class TorchBaseAlgorithm(Algorithm):
                 model = torch.compile(model, dynamic=False)
 
             if world_size > 1:
-                with torch.no_grad():
-                    for param in list(model.parameters()) + list(model.buffers()):
-                        dist.broadcast(param, src=0)
+                # Remove torch.no_grad() to ensure gradients are properly enabled
+                for param in list(model.parameters()) + list(model.buffers()):
+                    dist.broadcast(param, src=0)
 
         # Optimizers
         optimizers = [

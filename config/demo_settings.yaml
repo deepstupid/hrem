@@ -1,0 +1,54 @@
+# Demo Settings Configuration
+demo_modes:
+  lightning:
+    description: "⚡ Ultra-fast demo with minimal iterations"
+    max_epochs: 1
+    max_trials: 1
+    eval_interval: 1
+    batch_size: 256
+    patience_level: "low"
+    time_limit: 60
+  adaptive:
+    description: "🧠 Adaptive demo that adjusts based on available time"
+    max_epochs: 5
+    max_trials: 3
+    eval_interval: 1
+    batch_size: 512
+    patience_level: "medium"
+    time_limit: 120
+  comprehensive:
+    description: "🔬 Full-featured demo with detailed analysis"
+    max_epochs: 10
+    max_trials: 5
+    eval_interval: 1
+    batch_size: 1024
+    patience_level: "high"
+    time_limit: 180
+
+datasets:
+  synthetic:
+    tasks:
+      - copy
+      - reverse
+      - sort
+      - parity
+      - duplicate
+    default_task: copy
+  external:
+    - arc
+    - sudoku
+    - maze
+
+models:
+  available:
+    - HRM
+    - HREM
+  default_comparison:
+    - HRM
+    - HREM
+
+instrumentation:
+  collect_timing: true
+  collect_detailed_metrics: true
+  export_metrics: true
+  display_progress: true

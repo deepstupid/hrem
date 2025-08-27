@@ -1,117 +1,48 @@
-# Single source of truth for the parameterized demo
----
-# 1. UI and Display Parameters
+# Enhanced Demo Configuration
+demo_config:
+  default_mode: lightning
+  default_patience: low
+  default_hardware: low
+  default_detail: basic
+  
+  # Available demo modes
+  modes:
+    - lightning     # Ultra-fast demo
+    - adaptive      # Time-adaptive demo
+    - comprehensive # Full-featured demo
+    
+  # Available patience levels
+  patience_levels:
+    - low    # Quick results (1 min max)
+    - medium # Balanced (2 min max)
+    - high   # Thorough analysis (3 min max)
+    
+  # Available hardware capabilities
+  hardware_levels:
+    - low    # Basic hardware
+    - medium # Medium hardware
+    - high   # High-end hardware
+    
+  # Available detail levels
+  detail_levels:
+    - basic         # Minimal metrics
+    - adaptive      # Adaptive metrics
+    - comprehensive # Full metrics
+
 ui:
-  challenge_selector:
-    difficulty_display:
-      BEGINNER: "🌱 Beginner"
-      INTERMEDIATE: "🌿 Intermediate"
-      ADVANCED: "🔥 Advanced"
-      RESEARCH: "🔬 Research"
-    hardware_icon: "🖥️"
-    duration_icon: "⏱️"
-    title: "[bold blue]🎯 HRM vs HREM Challenge Selection[/bold blue]"
-    prompt: "\n[bold green]Select a challenge[/bold green] (enter number or name)"
-    invalid_selection: "[red]Invalid selection. Please try again.[/red]"
-    exit_message: "\n[yellow]Exiting...[/yellow]"
-
-  experiment_runner:
-    baseline_spinner: "Running {model_name} baseline evaluation..."
-    baseline_completion: "⏱️  {model_name} baseline completed in {elapsed_time:.1f} seconds"
-    optimization_spinner: "Running {model_name} hyperparameter optimization..."
-    optimization_completion: "⏱️  {model_name} optimization completed in {elapsed_time:.1f} seconds"
-    evaluation_spinner: "Running final evaluation..."
-    evaluation_completion: "⏱️  Final evaluation completed in {elapsed_time:.1f} seconds"
-    dataset_not_found_title: "[bold red]❌ Dataset not found![/bold red]"
-    dataset_not_found_message: "[yellow]The {dataset} dataset requires raw data files that are not included in this repository.[/yellow]"
-    dataset_not_found_instructions: "[dim]Please download the required dataset files or try a different challenge.[/dim]"
-    dataset_not_found_arc_instructions: "[dim]For ARC challenges, see the README for dataset preparation instructions.[/dim]"
-    no_models_to_evaluate: "[bold yellow]No models to evaluate in final comparison.[/bold yellow]"
-
-  main_display:
-    demo_title: "🚀 HRM vs HREM Demonstration: {challenge_name}"
-    demo_subtitle: "Complete end-to-end system showcasing real-time results generation"
-    challenge_details_format: "💻 {hardware} | ⏱️  {duration}"
-    models_comparison_format: "[bold]Models to be compared:[/bold] [cyan]{models}[/cyan]"
-    start_demo_prompt: "\n[bold green]Press Enter to start the demonstration...[/bold green]"
-    intro_title: "\n[bold]Challenge:[/bold] {challenge_name}"
-    intro_challenge_label: "[dim]{description}[/dim]"
-    intro_showcase_title: "\n[bold]This demonstration showcases:[/bold]"
-    intro_showcase_items:
-      - "• ⚡ Immediate baseline performance results"
-      - "• 🔍 Optional guided hyperparameter optimization"
-      - "• 🏆 Final comparison with best parameters"
-    approach_title: "\n[bold blue]🧠 Adaptive Approach Explanation[/bold blue]"
-    approach_explanation: "The HRM System uses an adaptive approach to hyperparameter optimization:"
-    approach_bullets:
-      - "• It respects your time by adhering to a defined 'patience' level (time budget)."
-      - "• It adapts to your hardware by detecting CPU and GPU resources to optimize parallelism."
-      - "• It focuses on promising models, stopping early for those that do not show improvement."
-      - "• This ensures the best possible results are found within the given constraints."
-    demo_completed_title: "✅ Demonstration Completed Successfully!"
-    final_comparison_title: "📊 Best Performance Comparison"
-    key_insights_title: "\n[bold]🔑 Key Insights:[/bold]"
-    key_insights_items:
-      - "• HRM: Traditional recurrent model with external memory"
-      - "• HREM: Hierarchical approach with multiple memory layers"
-      - "• Multi-objective optimization balances accuracy and parameter efficiency"
-      - "• All models are optimized for fair parameter count comparison"
-      - "• Each iteration provides actionable insights for improvement"
-    unique_features_title: "\n[bold green]🎯 What Makes This Approach Unique:[/bold green]"
-    unique_features_items:
-      - "• Real-time results generation after each iteration"
-      - "• Guided search for efficient hyperparameter exploration"
-      - "• Continuous feedback for actionable insights"
-      - "• No configuration parameters needed - fully turnkey"
-    demo_failed_message: "[bold red]❌ Demo failed: {error}[/bold red]"
-    challenge_not_found: "[bold red]❌ Challenge '{challenge_key}' not found![/bold red]"
-    available_challenges: "[dim]Available challenges:[/dim]"
-    challenge_list_item: "[dim]  • {challenge_name}[/dim]"
-    no_valid_models: "[bold red]❌ No valid models specified![/bold red]"
-    invalid_model_configs: "[bold red]❌ No valid models specified or invalid model configurations![/bold red]"
-    difficulty_label: "📈 Difficulty: {difficulty}"
-
-    # Workflow Steps
-    baseline_header: "⚡ Step 1: Baseline Performance Evaluation"
-    baseline_description: "Running a single evaluation for each model on {dataset} with default parameters..."
-    baseline_results_title: "📊 Baseline Results"
-    ask_for_optimization: "\n[bold yellow]Do you want to run hyperparameter optimization?[/bold yellow] (This may take a while)"
-    skipping_final_eval: "[dim]Skipping final evaluation as optimization was not run.[/dim]"
-
-    optimization_header: "🔍 Step 2: Guided Hyperparameter Optimization (Optional)"
-    optimization_description: "Optimizing hyperparameters for all models on {dataset} dataset with real-time performance feedback..."
-    optimization_advantage: "[dim]💡 Key advantage: Results are generated after each iteration![/dim]"
-
-    evaluation_header: "🏆 Step 3: Final Performance Comparison"
-    evaluation_description: "Running final comparison with optimized parameters on {dataset} dataset..."
-    best_results_title: "🏆 Best Overall Results"
-    press_enter_evaluation: "\n[bold blue]Press Enter to see final evaluation...[/bold blue]"
-
-    iteration_header_format: "[bold blue]{title}[/bold blue]"
-    final_comparison_header: "[bold]{title}[/bold]"
-    continuous_improvement_1: "\n[italic]The system begins generating results immediately,[/italic]"
-    continuous_improvement_2: "[italic]allowing for continuous improvement and insights.[/italic]"
-
-  display_colors: ["blue", "green", "yellow", "magenta", "cyan", "red"]
-
-  metrics_info:
-    - ['all/accuracy', 'Accuracy', '🎯 Higher is better - task solving accuracy']
-    - ['all/lm_loss', 'Loss', '📉 Lower is better - language modeling loss']
-    - ['all/steps', 'Steps', '⚡ Lower is better - average steps to solve']
-    - ['step', 'Training Steps', '📊 Training iterations completed']
-    - ['num_params', 'Parameters', '⚙️ Model parameter count']
-
-  key_metrics:
-    - ['all/accuracy', 'Accuracy']
-    - ['all/lm_loss', 'Loss']
-    - ['all/steps', 'Steps']
-    - ['num_params', 'Parameters']
-
-  progress_settings:
-    transient: true
-
-# 2. Paths and Storage (Now managed by core ExperimentConfig)
-
-# 3. Experiment Settings (Now managed by core ExperimentConfig)
-
-# 4. Model Configurations (Now managed by ModelRegistry)
+  # UI appearance settings
+  theme: "default"
+  show_progress_bars: true
+  show_detailed_metrics: false
+  export_metrics_by_default: false
+  
+  # Default datasets for quick demos
+  quick_demo_datasets:
+    - synthetic-reverse
+    - synthetic-sort
+    - synthetic-parity
+    
+  # Default models for comparison
+  default_models:
+    - HRM
+    - HREM

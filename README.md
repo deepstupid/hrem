@@ -9,7 +9,6 @@ This repository contains the PyTorch implementation for a family of models focus
 The primary models are:
 - **HRM (Hierarchical Reasoning Model)**: A recurrent architecture with two interdependent modules: a high-level module for abstract planning and a low-level module for detailed computations.
 - **HREM (Hierarchical Recurrent Execution Model)**: An extension of HRM with a multi-layer memory architecture and sparse memory addressing for more efficient information retrieval.
-- **EnhancedHREM**: An improved version of HREM with a better training algorithm, optimized architecture, and faster convergence.
 
 ## Quick Start
 
@@ -21,9 +20,6 @@ To run a side-by-side comparison of specified models:
 ```bash
 # Compare HRM and HREM on the synthetic dataset
 python run.py evaluate --dataset synthetic --models HRM HREM
-
-# Evaluate the EnhancedHREM model on the ARC dataset
-python run.py evaluate --dataset arc --models EnhancedHREM
 ```
 
 ### Hyperparameter Optimization
@@ -55,16 +51,6 @@ HRM is a recurrent architecture with two interdependent modules: a high-level mo
 
 ### HREM (Hierarchical Recurrent Execution Model)
 HREM is an extension of HRM with a multi-layer memory architecture and sparse memory addressing for more efficient information retrieval.
-
-### EnhancedHREM
-This is an improved version of HREM designed to be more competitive with HRM. The key enhancements include:
-
-- **Improved Model Architecture**: Increased memory capacity, improved memory retrieval with more top-k values, additional processing layers, and a larger model capacity overall.
-- **Better Training Algorithm**: Uses the AdamW optimizer for superior weight decay handling and better numerical stability.
-- **Enhanced Training Utilities**: Faster data loading, support for more workers, linear learning rate scheduling, and mixed-precision (AMP) training.
-- **Dynamic Reporting System**: The reporting system can dynamically handle any number of models, providing flexible comparisons and enhanced metrics.
-
-These enhancements lead to several performance improvements, including faster training, better convergence, and enhanced stability.
 
 ## Optimization and Evaluation Framework
 

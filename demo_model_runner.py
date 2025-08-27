@@ -1,7 +1,11 @@
-"""Unified model running utilities for the HRM/HREM demo system."""
+"""Unified model running utilities for the HRM/HREM demo system.
+
+This module provides utilities for running models and executing optimization trials
+in the demo system, with fallback mechanisms and timing instrumentation.
+"""
 
 import optuna
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from hrm_system import run_single_model
 from hrm_system.config import DataConfig, HREMParams
 from dataset_manager import dataset_manager
@@ -10,7 +14,25 @@ from rich.console import Console
 console = Console()
 
 def run_model_with_fallback(model_config, run_config, data_config, training_config, run_identifier):
-    """Run a model with fallback to synthetic dataset if needed."""
+    """Run a model with fallback to synthetic dataset if needed.
+    
+    This function attempts to run a model with the specified configuration.
+    If it fails due to dataset issues, it automatically falls back to
+    using a synthetic dataset.
+    
+    Args:
+        model_config: Model configuration
+        run_config: Run configuration
+        data_config: Data configuration
+        training_config: Training configuration
+        run_identifier: Unique identifier for this run
+        
+    Returns:
+        Model metrics dictionary
+        
+    Raises:
+        Exception: If the model run fails for reasons other than dataset issues
+    """
     try:
         metrics = run_single_model(
             run_config=run_config,
@@ -43,7 +65,23 @@ def run_model_with_fallback(model_config, run_config, data_config, training_conf
             raise
 
 def run_trial_with_timing(trial: optuna.trial.Trial, config, timing_manager=None, operation_name=None) -> Tuple[float, float]:
-    """Execute a single trial for a given model with optional timing."""
+    """Execute a single trial for a given model with optional timing.
+    
+    This function runs a single optimization trial and optionally records
+    timing information using the provided timing manager.
+    
+    Args:
+        trial: Optuna trial object
+        config: Experiment configuration
+        timing_manager: Optional timing manager for recording metrics
+        operation_name: Optional name for the timing operation
+        
+    Returns:
+        Tuple of (loss_value, elapsed_time)
+        
+    Raises:
+        optuna.TrialPruned: If the trial should be pruned
+    """
     import time
     
     start_time = time.time()
@@ -88,7 +126,22 @@ def run_trial_with_timing(trial: optuna.trial.Trial, config, timing_manager=None
         raise optuna.TrialPruned()
 
 def get_dataset_config(dataset: str, smoke_test: bool, num_aug: int = 0) -> DataConfig:
-    """Get dataset configuration, with fallback to synthetic if needed."""
+    """Get dataset configuration, with fallback to synthetic if needed.
+    
+    This function retrieves the configuration for a dataset, automatically
+    falling back to a synthetic dataset if the requested dataset is not available.
+    
+    Args:
+        dataset: Name of the dataset
+        smoke_test: Whether this is a smoke test
+        num_aug: Number of augmentations
+        
+    Returns:
+        Data configuration object
+        
+    Raises:
+        Exception: If neither the requested dataset nor synthetic dataset is available
+    """
     try:
         dataset_path = dataset_manager.get_dataset_path(dataset, smoke_test)
         return DataConfig(dataset=dataset, dataset_path=dataset_path, num_aug=num_aug)

@@ -1,37 +1,44 @@
+# Challenge Configuration for HRM/HREM Demo System
+
 challenges:
-  - name: "Smoke Test"
-    id: "smoke_test"
-    description: "A quick test to ensure the system is working correctly."
+  - name: "Quick Comparison"
+    id: "quick_comparison"
+    description: "A quick comparison between HRM and HREM algorithms."
     difficulty: "BEGINNER"
     hardware: "Low"
+    duration: "~30 sec"
+    dataset:
+      dataset: "synthetic-reverse"
+    models: 
+      - "HRM"
+      - "HREM"
+    patience_level: "low"
+    optimization: false
+
+  - name: "Basic Optimization"
+    id: "basic_optimization"
+    description: "Basic hyperparameter optimization demo."
+    difficulty: "INTERMEDIATE"
+    hardware: "Medium"
     duration: "~1 min"
     dataset:
-      dataset: "synthetic"
-      synthetic_task: "copy"
-    models: ["HRM", "HREM"]
+      dataset: "synthetic-sort"
+    models:
+      - "HRM"
+      - "HREM"
     patience_level: "low"
     optimization: true
 
-  - name: "ARC Basic"
-    id: "arc_basic"
-    description: "A baseline evaluation on the ARC dataset."
-    difficulty: "INTERMEDIATE"
-    hardware: "Medium"
-    duration: "~15 mins"
-    dataset:
-      dataset: "arc"
-    models: ["HRM", "HREM"]
-    patience_level: "medium"
-    optimization: false
-
-  - name: "ARC with Optimization"
-    id: "arc_optimized"
-    description: "Full optimization and evaluation on the ARC dataset."
+  - name: "Advanced Analysis"
+    id: "advanced_analysis"
+    description: "Comprehensive analysis with full optimization."
     difficulty: "ADVANCED"
     hardware: "High"
-    duration: "~1 hour"
+    duration: "~3 min"
     dataset:
-      dataset: "arc"
-    models: ["HRM", "HREM", "EnhancedHREM"]
-    patience_level: "high"
+      dataset: "synthetic-parity"
+    models:
+      - "HRM"
+      - "HREM"
+    patience_level: "medium"
     optimization: true

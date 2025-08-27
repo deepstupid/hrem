@@ -38,12 +38,12 @@ class ModelConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     """Configuration for the training process."""
-    epochs: int = 20000
-    eval_interval: int = 2000
+    epochs: int = 10  # Drastically reduced for demo purposes
+    eval_interval: int = 5
     global_batch_size: int = 384
     lr: float = 1e-4
     lr_min_ratio: float = 0.1
-    lr_warmup_steps: int = 2000
+    lr_warmup_steps: int = 10
     puzzle_emb_lr: float = 1e-4
     weight_decay: float = 1.0
     puzzle_emb_weight_decay: float = 1.0
@@ -93,7 +93,7 @@ class EvaluationConfig(BaseModel):
 
 class OptimizationConfig(BaseModel):
     """Configuration for the hyperparameter optimization mode."""
-    n_trials: int = Field(10, description="Number of optimization trials.")
+    n_trials: int = Field(3, description="Number of optimization trials.")  # Reduced for demo
     n_jobs: int = Field(1, description="Number of parallel jobs for Optuna.")
     storage: str = Field("sqlite:///experiments/optuna_hrem.db", description="Optuna storage URL.")
     search_space: Dict[str, Any] = Field(default_factory=dict, description="Hyperparameter search space for Optuna.")

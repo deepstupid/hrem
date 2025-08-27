@@ -114,6 +114,7 @@ def compute_lr(base_lr: float, training_config: TrainingConfig, train_state: Tra
 
 
 def train_batch(training_config: TrainingConfig, train_state: TrainState, batch: Any, global_batch_size: int, rank: int, world_size: int):
+    torch._functorch.config.donated_buffer = False
     train_state.step += 1
     if train_state.step > train_state.total_steps:
         return None
@@ -141,11 +142,22 @@ def train_batch(training_config: TrainingConfig, train_state: TrainState, batch:
 
     train_state.carry = new_carry
 
-    # Backward pass with optional AMP
+    # Backward pass with optional AMP - ensure we don't reuse tensors
     if use_amp and scaler is not None:
-        scaler.scale((1 / global_batch_size) * loss).backward()
+        # Create a fresh tensor for backward pass
+        scaled_loss = scaler.scale((1 / global_batch_size) * loss.detach().clone())
+        scaled_loss.backward()
+        # Clean up to prevent memory issues
+        del scaled_loss
     else:
-        ((1 / global_batch_size) * loss).backward()
+        # Create a fresh tensor for backward pass
+        scaled_loss = ((1 / global_batch_size) * loss.detach().clone())
+        scaled_loss.backward()
+        # Clean up to prevent memory issues
+        del scaled_loss
+        
+    # Clean up the original loss tensor
+    del loss
 
     if world_size > 1:
         for param in train_state.model.parameters():

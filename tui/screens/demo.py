@@ -5,7 +5,7 @@ from textual.containers import VerticalScroll, Vertical, Horizontal
 from textual.widgets import Static, Button, Select
 from rich.text import Text
 
-from demo_config import load_challenge_config, get_configs_for_challenge, load_ui_config
+from demo_config_manager import ConfigManager
 from demo_utils import ResultsDisplay
 from adaptive_demo_runner import AdaptiveDemoRunner
 from hrm_system.config import ExperimentConfig, RunConfig, EvaluationConfig
@@ -15,8 +15,8 @@ class DemoScreen(Static):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.challenges = load_challenge_config()
-        self.ui_config = load_ui_config()
+        self.challenges = ConfigManager.load_challenge_config()
+        self.ui_config = ConfigManager.load_ui_config()
         self.results_displayer = ResultsDisplay(self.ui_config)
         self.selected_challenge = self.challenges[0] if self.challenges else None
 
@@ -81,7 +81,7 @@ class DemoScreen(Static):
             return
 
         # 1. Get the Pydantic configs for the selected challenge
-        data_config, training_config, opt_config, model_configs = get_configs_for_challenge(self.selected_challenge)
+        data_config, training_config, opt_config, model_configs = ConfigManager.get_configs_for_challenge(self.selected_challenge)
 
         # 2. Create the full ExperimentConfig
         run_config = RunConfig(study_name=self.selected_challenge['id'], output_dir=f"experiments/{self.selected_challenge['id']}")

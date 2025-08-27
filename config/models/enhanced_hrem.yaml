@@ -1,5 +1,0 @@
-name: EnhancedHREM
-algorithm_class: hrm_system.algorithms.enhanced_hrem.EnhancedHREMAlgorithm
-base_arch_config: enhanced_hrem_v1
-search_space_config: enhanced_hrem_search_space
-training_config_name: enhanced_hrem

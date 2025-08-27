@@ -6,7 +6,6 @@ This document describes the refactored architecture of the HRM/HREM demo system,
 
 ### Timing Utilities
 - **`demo_timing_utils.py`**: Core timing functionality with `TimingManager` and `TimingContext`
-- **`demo_timing.py`**: Legacy interface that delegates to `demo_timing_utils`
 - **`demo_metrics.py`**: Metrics collection that extends `TimingManager`
 
 ### Model Running
@@ -17,7 +16,9 @@ This document describes the refactored architecture of the HRM/HREM demo system,
 
 ### Configuration Management
 - **`demo_config_manager.py`**: Centralized configuration management
-- **`demo_config.py`**: Legacy interface that delegates to `demo_config_manager`
+
+### Demo Execution
+- **`adaptive_demo_runner.py`**: Adaptive demo execution with timing and optimization
 
 ## Key Improvements
 
@@ -26,10 +27,7 @@ This document describes the refactored architecture of the HRM/HREM demo system,
 3. **Improved Maintainability**: Changes only need to be made in one place
 4. **Better Consistency**: Standardized interfaces across the codebase
 5. **Enhanced Reusability**: Components can be easily used in new features
-
-## Backward Compatibility
-
-All existing interfaces remain functional to ensure backward compatibility with existing code.
+6. **Simplified Architecture**: Removed unnecessary backward compatibility layers
 
 ## Testing
 

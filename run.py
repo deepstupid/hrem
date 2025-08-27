@@ -32,7 +32,7 @@ from demo_models import (
 )
 from hrm_system.reporting import display_final_comparison, display_optimization_results
 from dataset_manager import dataset_manager
-from demo_timing import TimingCollector, DemoTimer
+from demo_timing_utils import TimingManager, TimingContext
 
 # Import AdaptiveDemoRunner
 from adaptive_demo_runner import AdaptiveDemoRunner
@@ -215,7 +215,7 @@ def demo(dataset, num_aug, n_trials, n_jobs, n_final_runs, smoke_test, study_nam
     )
     
     # Initialize adaptive demo runner
-    demo_runner = AdaptiveDemoRunner(smoke_test=smoke_test, patience=patience)
+    demo_runner = AdaptiveDemoRunner(experiment_config, results_displayer=None)
     
     # Show exciting intro
     console.print("[bold green]⚡ Real-time optimization with immediate results![/bold green]")

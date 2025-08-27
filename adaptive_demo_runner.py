@@ -14,14 +14,15 @@ from hrm_system import (
     run_single_model,
 )
 from hrm_system.config import HREMParams
-from demo_timing import TimingCollector, DemoTimer
+from demo_timing_utils import TimingManager, TimingContext
 from demo_models import get_model_config, get_model_search_space
 from hrm_system.reporting import display_final_comparison, display_optimization_results
-from demo_shared import run_trial, get_best_trial_info, run_model_with_fallback
+from demo_shared import get_best_trial_info
+from demo_model_runner import run_model_with_fallback, run_trial_with_timing
 
 console = Console()
 
-class AdaptiveDemoRunner(TimingCollector):
+class AdaptiveDemoRunner(TimingManager):
     """An adaptive demo runner that manages timing, user patience, and real-time results."""
     
     def __init__(self, config: ExperimentConfig, results_displayer):
@@ -68,7 +69,7 @@ class AdaptiveDemoRunner(TimingCollector):
     def run_model_with_timing(self, model_config, run_config, data_config, training_config, run_identifier):
         """Run a model and track its execution time."""
         operation_name = f"run_{model_config.name}"
-        with DemoTimer(self, operation_name) as timer:
+        with TimingContext(self, operation_name) as timer:
             try:
                 metrics = run_model_with_fallback(
                     model_config=model_config,
@@ -77,7 +78,7 @@ class AdaptiveDemoRunner(TimingCollector):
                     training_config=training_config,
                     run_identifier=run_identifier
                 )
-                return metrics, timer.collector.end_timer(timer.start_time)
+                return metrics, self.end_timer(timer.start_time)
             except Exception as e:
                 raise e
 
@@ -128,7 +129,7 @@ class AdaptiveDemoRunner(TimingCollector):
         
         console.print(f"[cyan]Optimizing {model_to_optimize.name} with {n_trials} trials...[/cyan]")
         
-        with DemoTimer(self, f"optimization_{model_to_optimize.name}") as timer:
+        with TimingContext(self, f"optimization_{model_to_optimize.name}") as timer:
             try:
                 import optuna
                 
@@ -156,7 +157,7 @@ class AdaptiveDemoRunner(TimingCollector):
                     # Run a single trial
                     trial = study.ask()
                     try:
-                        value = run_trial(trial, config)
+                        value, elapsed = run_trial_with_timing(trial, config, self, f"trial_{trial.number}")
                         study.tell(trial, value)
                         if value < best_value:
                             best_value = value
@@ -170,7 +171,7 @@ class AdaptiveDemoRunner(TimingCollector):
                 best_info = get_best_trial_info(study)
                 if best_info:
                     optimized_results[model_to_optimize.name] = best_info
-                    console.print(f"[green]✅ {model_to_optimize.name} optimization completed ({timer.collector.end_timer(timer.start_time):.1f}s)![/green]")
+                    console.print(f"[green]✅ {model_to_optimize.name} optimization completed ({self.end_timer(timer.start_time):.1f}s)![/green]")
                     console.print(f"[bright_green]Best Loss: {best_info['value']:.4f}[/bright_green]")
                 else:
                     console.print(f"[yellow]⚠️  {model_to_optimize.name} optimization completed with no valid trials[/yellow]")

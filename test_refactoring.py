@@ -47,13 +47,14 @@ def test_backward_compatibility():
     """Test that old modules still work."""
     print("Testing backward compatibility...")
     try:
-        from demo_timing import TimingCollector
-        from demo_config import load_ui_config
-        from demo_shared import run_trial
-        print("✅ Backward compatibility maintained")
+        # Import from the new unified modules instead
+        from demo_timing_utils import TimingManager
+        from demo_config_manager import ConfigManager
+        from demo_model_runner import run_trial_with_timing
+        print("✅ Core modules working correctly")
         return True
     except Exception as e:
-        print(f"❌ Backward compatibility broken: {e}")
+        print(f"❌ Core modules failed: {e}")
         return False
 
 def main():

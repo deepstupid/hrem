@@ -33,6 +33,18 @@ def generate_synthetic_data(config: DataProcessConfig):
             output_seq = input_seq.copy()
         elif config.task_type == "reverse":
             output_seq = input_seq[::-1].copy()
+        elif config.task_type == "sort":
+            output_seq = np.sort(input_seq).copy()
+        elif config.task_type == "parity":
+            # For parity, output 1 if even number of 1s, 0 if odd
+            parity = 1 if np.sum(input_seq == 1) % 2 == 0 else 0
+            output_seq = np.full_like(input_seq, parity)
+        elif config.task_type == "duplicate":
+            # For duplicate, repeat each element
+            output_seq = np.repeat(input_seq, 2)[:config.seq_len]  # Truncate if needed
+            # If we don't have enough space, pad with zeros
+            if len(output_seq) < config.seq_len:
+                output_seq = np.pad(output_seq, (0, config.seq_len - len(output_seq)))
         else:
             raise ValueError(f"Unknown task type: {config.task_type}")
 

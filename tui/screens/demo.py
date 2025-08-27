@@ -107,12 +107,12 @@ class DemoScreen(Static):
         # --- Optimization (Optional) ---
         optimized_results = {}
         if self.selected_challenge.get("optimization"):
-            config.mode = "optimize"
             optimized_results = runner.run_hyperparameter_optimization()
-            self.results_displayer.display_model_detailed_stats("📈 Optimization Results", optimized_results, model_names=[opt_config.model_to_optimize.name])
+            # Display optimization results using the hrm_system reporting function
+            for model_name, best_info in optimized_results.items():
+                display_optimization_results(model_name, {"best_params": best_info['params']})
 
         # --- Final Evaluation ---
         final_results = runner.run_final_evaluation(optimized_results)
-        self.results_displayer.display_final_comparison("🏆 Final Comparison", final_results)
-        self.results_displayer.display_final_leader(final_results)
+        display_final_comparison("🏆 Final Comparison", final_results)
         runner.display_timing_summary()

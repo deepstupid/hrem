@@ -19,6 +19,7 @@ from .config import (
 from .evaluation import run_evaluation
 from .optimization import run_optimization
 from .runner import run_single_model
+from .utils import logger_callback
 
 __all__ = [
     "run_single_model",
@@ -32,4 +33,5 @@ __all__ = [
     "HREMParams",
     "run_evaluation",
     "run_optimization",
+    "logger_callback",
 ]

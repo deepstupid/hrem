@@ -7,7 +7,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 
 from demo_config_manager import DemoConfig, ConfigManager, model_registry, DemoMode
-from unified_demo_runner import run_demo
+from adaptive_demo_runner import run_adaptive_demo
 
 console = Console()
 
@@ -102,7 +102,7 @@ def unified_demo(interactive, dataset, smoke_test, study_name, patience, hardwar
         config.loop_control.max_trials = max_trials
         config.instrumentation.export_metrics = export_metrics
 
-    run_demo(config)
+    run_adaptive_demo(config)
 
 if __name__ == "__main__":
     unified_demo()

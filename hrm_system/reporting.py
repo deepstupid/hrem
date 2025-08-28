@@ -14,7 +14,7 @@ console = Console()
 
 # Define priority metrics as a constant for single source of truth
 PRIORITY_METRICS = [
-    'all/accuracy', 'all/lm_loss', 'all/steps', 'num_params',
+    'all/accuracy', 'all/steps', 'num_params',
     'all/exact_accuracy', 'all/q_halt_accuracy', 'all/q_halt_loss'
 ]
 
@@ -142,15 +142,14 @@ def generate_evaluation_report(
     ]
     
     # Add key metrics comparison
-    summary_lines.append("| Model | Accuracy | Loss | Steps | Parameters |")
-    summary_lines.append("|---|---|---|---|---|")
+    summary_lines.append("| Model | Accuracy | Steps | Parameters |")
+    summary_lines.append("|---|---|---|---|")
     for name in model_names:
         metrics = all_metrics.get(name, {})
         accuracy = metrics.get('all/accuracy', 'N/A')
-        loss = metrics.get('all/lm_loss', 'N/A')
         steps = metrics.get('all/steps', 'N/A')
         params = metrics.get('num_params', 'N/A')
-        summary_lines.append(f"| **{name}** | {accuracy} | {loss} | {steps} | {params} |")
+        summary_lines.append(f"| **{name}** | {accuracy} | {steps} | {params} |")
     
     # Determine winner based on accuracy
     accuracies = {}
@@ -239,7 +238,7 @@ def display_final_comparison(title: str, final_results: Dict[str, Any]):
     for name in model_names:
         table.add_column(name.replace('_best', ' (Opt)'), justify="right", style=f"bold {'bright_green' if '_best' in name else 'green'}")
 
-    key_metrics = [('all/accuracy', 'Accuracy'), ('all/lm_loss', 'Loss'), ('num_params', 'Parameters')]
+    key_metrics = [('all/accuracy', 'Accuracy'), ('num_params', 'Parameters')]
     for key, display_name in key_metrics:
         row_values = [str(final_results.get(name, {}).get(key, 'N/A')) for name in model_names]
         table.add_row(display_name, *row_values)
@@ -290,15 +289,14 @@ def generate_optimization_report(
     ]
     
     # Add key metrics comparison
-    report_lines.append("| Model | Accuracy | Loss | Steps | Parameters |")
-    report_lines.append("|---|---|---|---|---|")
+    report_lines.append("| Model | Accuracy | Steps | Parameters |")
+    report_lines.append("|---|---|---|---|")
     for name in model_names:
         metrics = final_metrics.get(name, {})
         accuracy = metrics.get('all/accuracy', 'N/A')
-        loss = metrics.get('all/lm_loss', 'N/A')
         steps = metrics.get('all/steps', 'N/A')
         params = metrics.get('num_params', 'N/A')
-        report_lines.append(f"| **{name}** | {accuracy} | {loss} | {steps} | {params} |")
+        report_lines.append(f"| **{name}** | {accuracy} | {steps} | {params} |")
     
     # Determine winner based on accuracy
     accuracies = {}
@@ -318,7 +316,7 @@ def generate_optimization_report(
     report_lines.extend([
         "",
         f"Best trial number: {best_trial.number}",
-        f"Best trial value (loss): {best_trial.value:.4f}",
+        f"Best trial values (Accuracy, Parameters): {best_trial.values[0]:.4f}, {best_trial.values[1]}",
         ""
     ])
 
@@ -334,8 +332,8 @@ def generate_optimization_report(
         "",
         "## Optimization Insights",
         "",
-        f"- **Loss Improvement**: The optimized model achieved a loss of {best_trial.value:.4f}, improving from the baseline",
-        "- **Parameter Efficiency**: The optimized model maintains performance while potentially reducing parameter count",
+        f"- **Accuracy Improvement**: The optimized model achieved an accuracy of {best_trial.values[0]:.4f}",
+        f"- **Parameter Efficiency**: The optimized model has {best_trial.values[1]} parameters",
         "- **Stability**: The optimization process successfully converged to a stable solution"
     ])
 

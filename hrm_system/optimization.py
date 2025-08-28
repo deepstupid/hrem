@@ -18,8 +18,13 @@ def run_optimization(config: ExperimentConfig) -> Dict[str, Any]:
     if not opt_config or not opt_config.model_to_optimize or not opt_config.search_space:
         raise ValueError("Optimization mode requires a model to optimize and a search space.")
 
-    def objective(trial: optuna.trial.Trial) -> float:
-        """The objective function for Optuna to optimize."""
+    def objective(trial: optuna.trial.Trial) -> tuple[float, int]:
+        """The multi-objective function for Optuna to optimize.
+
+        Objectives:
+        1. Maximize accuracy
+        2. Minimize parameter count
+        """
         model_config = opt_config.model_to_optimize
         search_space = opt_config.search_space or {}
 
@@ -53,8 +58,10 @@ def run_optimization(config: ExperimentConfig) -> Dict[str, Any]:
                 training_config=config.training_config,
                 run_identifier=f"trial_{trial.number}"
             )
-            # Optuna can minimize, so we return a value that should be minimized.
-            return metrics.get('all/lm_loss', float('inf'))
+            # Return accuracy (to be maximized) and parameter count (to be minimized)
+            accuracy = metrics.get('all/accuracy', 0.0)
+            num_params = metrics.get('num_parameters', float('inf'))
+            return accuracy, num_params
         except Exception as e:
             # Log the error and let Optuna handle it as a pruned trial.
             print(f"Trial {trial.number} failed with error: {e}")
@@ -63,7 +70,7 @@ def run_optimization(config: ExperimentConfig) -> Dict[str, Any]:
     study = optuna.create_study(
         study_name=config.run_config.study_name,
         storage=opt_config.storage,
-        direction="minimize",
+        directions=["maximize", "minimize"],
         load_if_exists=True
     )
 
@@ -74,12 +81,18 @@ def run_optimization(config: ExperimentConfig) -> Dict[str, Any]:
         callbacks=[config.run_config.logger_callback] if config.run_config.logger_callback else None,
     )
 
-    # After optimization, prepare and return the results
-    best_trial = study.best_trial
+    # After optimization, prepare and return the results from the best trial(s)
+    best_trials = study.best_trials
+    if not best_trials:
+        return {"best_trials": []}
+
+    # For now, we select the first best trial from the Pareto front
+    best_trial = best_trials[0]
+
     results = {
         "best_trial": best_trial.number,
         "best_params": best_trial.params,
-        "best_value": best_trial.value,
+        "best_values": best_trial.values,
     }
 
     if config.run_config.output_dir:

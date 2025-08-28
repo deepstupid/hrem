@@ -6,7 +6,7 @@ echo "=========================="
 
 # Run a quick smoke test with basic settings
 echo "Running smoke test with HRM and HREM models..."
-python unified_demo.py --smoke-test --demo-mode lightning --detail basic --max-epochs 1 --max-trials 1 --models HRM --models HREM --dataset synthetic-reverse
+python run.py demo --smoke-test --patience low --models HRM --models HREM --dataset synthetic --task reverse --n-trials 1
 
 echo ""
 echo "Test completed successfully!"

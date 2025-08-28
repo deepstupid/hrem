@@ -28,7 +28,9 @@ from demo_config import DemoConfig, DemoMode
 from demo_models import get_model_configs, get_model_config, get_model_search_space
 from demo_shared import get_best_trial_info
 from demo_model_runner import run_model_with_fallback, run_trial_with_timing, get_dataset_config
-from demo_patience_manager import PatienceManager
+from scientific_comparison.config import ChallengeConfig, ChallengeLevel, PatienceBudget
+from scientific_comparison.insight_generator import ScientificInsightGenerator
+from scientific_comparison.patience_manager import AdaptivePatienceManager, ExplorationPhase
 from demo_visualization import plot_hyperparameter_pca
 
 console = Console()
@@ -43,6 +45,8 @@ class DemoRunner:
         self.metrics = {}
         self.timing_metrics = {}
         self.patience_manager = None
+        self.insight_generator = None
+        self.final_insights = []
         self.demo_state = {
             "current_step": "Initializing",
             "progress": 0,
@@ -368,6 +372,23 @@ class DemoRunner:
         description = mode_descriptions.get(self.config.demo_mode, "Demo")
         console.print(f"[italic]{description}[/italic]")
 
+        # Display final insights in a table
+        if self.final_insights:
+            console.print("\n[bold magenta]🔬 Scientific Insights:[/bold magenta]")
+            insight_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+            insight_table.add_column("Insight Type", style="bold")
+            insight_table.add_column("Implication")
+            insight_table.add_column("Confidence", style="yellow")
+
+            for insight in self.final_insights:
+                insight_table.add_row(
+                    insight.type.title(),
+                    insight.implications[0],
+                    f"{insight.confidence:.2f}"
+                )
+
+            console.print(insight_table)
+
     def export_metrics(self, filepath: str = None):
         """Export metrics to a file."""
         if not self.config.instrumentation.export_metrics:
@@ -417,6 +438,28 @@ def run_demo(config: DemoConfig):
     # Initialize demo runner
     demo_runner = DemoRunner(config)
     
+    # --- Setup for Scientific Comparison ---
+    # Create a ChallengeConfig from the DemoConfig
+    difficulty_map = {
+        "low": ChallengeLevel.BEGINNER,
+        "medium": ChallengeLevel.INTERMEDIATE,
+        "high": ChallengeLevel.ADVANCED,
+    }
+    challenge_config = ChallengeConfig(
+        name=f"Demo Challenge: {config.dataset}-{config.task}",
+        id=f"demo_{config.dataset}_{config.task}",
+        description="A dynamic challenge to compare HRM and HREM in a demo setting.",
+        dataset=get_dataset_config(f"{config.dataset}-{config.task}" if config.dataset == "synthetic" else config.dataset, config.smoke_test, config.num_aug),
+        difficulty=difficulty_map.get(config.patience_level, ChallengeLevel.BEGINNER),
+        scientific_question="Which model architecture (HRM or HREM) demonstrates superior performance and adaptability on the given task?",
+        hypothesis_space=[
+            "HREM's memory architecture will lead to better performance on tasks requiring long-range dependencies.",
+            "HRM's simpler architecture will be more efficient on less complex tasks.",
+            "Hyperparameter optimization will significantly improve the performance of both models."
+        ]
+    )
+    demo_runner.insight_generator = ScientificInsightGenerator(challenge=challenge_config)
+
     # --- STEP 1: Baseline Evaluation ---
     baseline_results = demo_runner.run_baseline_evaluation()
     
@@ -424,6 +467,25 @@ def run_demo(config: DemoConfig):
     display_final_comparison("📊 Baseline Results", baseline_results)
     console.print("[bold green]✅ Baseline evaluation completed![/bold green]\n")
     
+    # --- Initial Insight Generation ---
+    console.print(Panel("[bold]🔬 Step 1.5: Initial Insight Generation[/bold]", expand=False))
+    initial_insights = demo_runner.insight_generator.extract_insights(baseline_results)
+    if initial_insights:
+        console.print("[cyan]Initial insights generated:[/cyan]")
+        for insight in initial_insights:
+            console.print(f"  - [bold]{insight.type.title()}[/bold]: {insight.implications[0]}")
+    else:
+        console.print("[yellow]No initial insights generated.[/yellow]")
+
+    # Calculate average discovery potential
+    # If no insights are generated, we fall back to a neutral potential of 0.5.
+    # This ensures that the demo can proceed even if the initial baseline
+    # does not produce strong signals.
+    avg_discovery_potential = 0.5
+    if initial_insights:
+        avg_discovery_potential = sum(insight.discovery_potential for insight in initial_insights) / len(initial_insights)
+    console.print(f"[bold cyan]Average Discovery Potential: {avg_discovery_potential:.2f}[/bold cyan]\n")
+
     # Check if we should continue with optimization
     if not demo_runner.should_continue_demo():
         console.print("[yellow]⚠️  Demo time limit reached. Skipping optimization phase.[/yellow]")
@@ -432,10 +494,8 @@ def run_demo(config: DemoConfig):
         return
     
     # --- STEP 2: Hyperparameter Optimization ---
-    demo_runner.patience_manager = PatienceManager(
-        patience_in_seconds=int(config.patience_level),
-        timing_metrics=demo_runner.timing_metrics
-    )
+    patience_budget = PatienceBudget(level=config.patience_level)
+    demo_runner.patience_manager = AdaptivePatienceManager(initial_patience=patience_budget)
 
     # Run optimization for each model that has a search space
     optimized_results = {}
@@ -446,12 +506,14 @@ def run_demo(config: DemoConfig):
             
         model_search_space = get_model_search_space(model_name)
         if model_search_space:
-            num_trials = demo_runner.patience_manager.get_optimization_trial_budget(
-                model_name=model_name,
-                epochs_per_trial=config.loop_control.max_epochs,
-                time_spent_so_far=demo_runner.get_elapsed_time()
+            discovery_potential = avg_discovery_potential
+            time_allocation = demo_runner.patience_manager.allocate_for_phase(
+                phase=ExplorationPhase.HYPERPARAMETER_OPTIMIZATION,
+                discovery_potential=discovery_potential
             )
-            console.print(f"[bold cyan]Dynamic trial budget for {model_name}: {num_trials} trials[/bold cyan]")
+            num_trials = time_allocation.max_trials if time_allocation.max_trials is not None else 1
+
+            console.print(f"[bold cyan]Dynamic trial budget for {model_name} (Discovery Potential: {discovery_potential:.2f}): {num_trials} trials[/bold cyan]")
 
             model_opt_results = demo_runner.run_hyperparameter_optimization(model_name, num_trials)
             optimized_results.update(model_opt_results)
@@ -482,6 +544,16 @@ def run_demo(config: DemoConfig):
     console.print("\n[bold magenta]🎨 Final Results:[/bold magenta]")
     display_final_comparison("🏆 Final Comparison", final_results)
     
+    # --- Final Insight Generation ---
+    console.print(Panel("[bold]🔬 Step 4: Final Insight Generation[/bold]", expand=False))
+    demo_runner.final_insights = demo_runner.insight_generator.extract_insights(final_results)
+    if demo_runner.final_insights:
+        console.print("[cyan]Final insights generated:[/cyan]")
+        for insight in demo_runner.final_insights:
+            console.print(f"  - [bold]{insight.type.title()}[/bold]: {insight.implications[0]} (Confidence: {insight.confidence:.2f})")
+    else:
+        console.print("[yellow]No final insights generated.[/yellow]")
+
     # Show exciting conclusion
     demo_runner.display_summary()
     demo_runner.export_metrics()

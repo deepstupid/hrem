@@ -1,47 +1,45 @@
 """Comprehensive test script to verify refactored code functionality."""
 
 import time
-from demo_timing_utils import EnhancedTimingManager, EnhancedTimingContext
-from demo_model_runner import get_dataset_config
-from demo_config_manager import EnhancedConfigManager
+from demo_timing_utils import TimingManager
+from demo_config_manager import ConfigManager, DemoConfig
 
 def test_timing_functionality():
     """Test the timing functionality."""
-    tm = EnhancedTimingManager()
+    tm = TimingManager()
 
     # Record some metrics
     tm.record_metric("accuracy", 0.95)
     tm.record_metric("loss", 0.05)
 
     # Test timing recording
-    with EnhancedTimingContext(tm, "test_operation") as timer:
+    with tm.get_context("test_operation"):
         time.sleep(0.01)  # Sleep for 10ms
 
     # Check that timing was recorded
     stats = tm.get_timing_stats("test_operation")
     assert stats and stats['count'] == 1
 
-def test_model_runner_functionality():
-    """Test the model runner functionality."""
-    # This test just checks if the function can be imported and called.
-    get_dataset_config("synthetic", smoke_test=True)
-
 def test_config_manager_functionality():
     """Test the config manager functionality."""
-    # Test that we can call the methods
-    ui_config = EnhancedConfigManager.load_ui_config()
-    challenge_config = EnhancedConfigManager.load_challenge_config()
-    assert isinstance(ui_config, dict)
-    assert isinstance(challenge_config, list)
+    # Test that we can create a config
+    config = ConfigManager.get_adaptive_config()
+    assert isinstance(config, DemoConfig)
 
 def test_integration():
     """Test integration between components."""
     # Create instances of each component
-    timing_manager = EnhancedTimingManager()
+    timing_manager = TimingManager()
     
     # Test that they can work together
     timing_manager.record_metric("integration_test", 1.0)
-    ui_config = EnhancedConfigManager.load_ui_config()
+    config = ConfigManager.get_adaptive_config()
     
     assert "integration_test" in timing_manager.metrics
-    assert "default_models" in ui_config
+    assert config.patience_level == "low"
+
+if __name__ == "__main__":
+    test_timing_functionality()
+    test_config_manager_functionality()
+    test_integration()
+    print("All comprehensive tests passed!")

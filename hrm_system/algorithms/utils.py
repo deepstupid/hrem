@@ -142,21 +142,16 @@ def train_batch(training_config: TrainingConfig, train_state: TrainState, batch:
 
     train_state.carry = new_carry
 
-    # Backward pass with optional AMP - ensure we don't reuse tensors
+    # Backward pass with optional AMP
     if use_amp and scaler is not None:
-        # Create a fresh tensor for backward pass
-        scaled_loss = scaler.scale((1 / global_batch_size) * loss.detach().clone())
+        scaled_loss = scaler.scale((1 / global_batch_size) * loss)
         scaled_loss.backward()
-        # Clean up to prevent memory issues
-        del scaled_loss
     else:
-        # Create a fresh tensor for backward pass
-        scaled_loss = ((1 / global_batch_size) * loss.detach().clone())
+        scaled_loss = (1 / global_batch_size) * loss
         scaled_loss.backward()
-        # Clean up to prevent memory issues
-        del scaled_loss
-        
-    # Clean up the original loss tensor
+
+    # Clean up to prevent memory issues
+    del scaled_loss
     del loss
 
     if world_size > 1:

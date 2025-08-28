@@ -58,33 +58,43 @@ def run_single_model(
     logger = run_config.logger_callback or print
 
     # 1. Determine dataset path and build dataset if it doesn't exist
+    dataset_name = data_config.dataset
+    task_name = getattr(data_config, 'synthetic_task', 'default')
+
+    if dataset_name.startswith("synthetic-"):
+        parts = dataset_name.split('-', 1)
+        dataset_name = parts[0]
+        task_name = parts[1]
+        # Clean the dataset name in the config for consistency
+        data_config.dataset = dataset_name
+        data_config.synthetic_task = task_name
+
     if run_config.smoke_test:
-        data_dir = f"data/{data_config.dataset}-smoke"
+        data_dir = f"data/{dataset_name}-{task_name}-smoke"
         num_aug = 0
         training_config.smoke_test = True
         training_config.epochs = 1
         training_config.eval_interval = 1
-        # Note: Smoke test overrides for model params are now handled inside the algorithm.
     else:
-        data_dir = f"data/{data_config.dataset}-full"
+        data_dir = f"data/{dataset_name}-{task_name}-full"
         num_aug = data_config.num_aug
 
     data_config.dataset_path = data_dir
 
-    dataset_builder_script = f"dataset/build_{data_config.dataset}_dataset.py"
+    dataset_builder_script = f"dataset/build_{dataset_name}_dataset.py"
     if not os.path.exists(data_dir):
         build_command = [
             dataset_builder_script,
             f"--output-dir={data_dir}",
             f"--num-aug={num_aug}"
         ]
-        if data_config.dataset == "synthetic":
+        if dataset_name == "synthetic":
             build_command.extend([
-                f"--task-type={data_config.synthetic_task}",
+                f"--task-type={task_name}",
                 "--num-samples=10" if run_config.smoke_test else "--num-samples=1000"
             ])
 
-        logger(f"Building {data_config.dataset} dataset...")
+        logger(f"Building {dataset_name} dataset with task {task_name}...")
         _run_dataset_builder(build_command, logger)
         logger(f"Dataset built successfully at {data_dir}")
 

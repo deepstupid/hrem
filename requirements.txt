@@ -18,3 +18,5 @@ textual
 pytest
 click
 scipy
+matplotlib
+scikit-learn

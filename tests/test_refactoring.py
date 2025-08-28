@@ -3,7 +3,8 @@ from unittest.mock import MagicMock
 import torch
 from hrm_system.algorithms.hrem import HREMAlgorithm
 from hrm_system.config import TrainingConfig, ModelConfig, HREMParams
-from scientific_reporting import ScientificReporter
+from scientific_comparison.insight_generator import ScientificInsightGenerator
+import itertools
 
 class RefactoringTests(unittest.TestCase):
 
@@ -65,8 +66,23 @@ class RefactoringTests(unittest.TestCase):
                 {"all/accuracy": 0.88},
             ]
         }
+        metric='all/accuracy'
 
-        p_values = ScientificReporter.calculate_statistical_significance(raw_results, metric='all/accuracy')
+        # Helper to extract metric data
+        def get_metric_data(results, model_name, metric_key):
+            return [run[metric_key] for run in results[model_name]]
+
+        model_names = list(raw_results.keys())
+        p_values = {name: {} for name in model_names}
+
+        for model1, model2 in itertools.combinations(model_names, 2):
+            data1 = get_metric_data(raw_results, model1, metric)
+            data2 = get_metric_data(raw_results, model2, metric)
+
+            p_value = ScientificInsightGenerator.calculate_statistical_significance(data1, data2)
+            p_values[model1][model2] = p_value
+            p_values[model2][model1] = p_value
+
 
         # Test ModelA vs ModelB (should be significant)
         self.assertIn("ModelB", p_values["ModelA"])

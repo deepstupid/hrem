@@ -46,3 +46,18 @@ def test_config_validation_error():
     with pytest.raises(ValueError):
         # 'invalid_dataset' is not a valid literal for the dataset
         ExperimentConfig(data_config={"dataset": "invalid_dataset"})
+
+def test_valid_dataset_names():
+    """
+    Tests that all valid dataset names are accepted without error.
+    """
+    valid_datasets = [
+        "arc", "sudoku", "maze", "synthetic", "synthetic-copy",
+        "synthetic-reverse", "synthetic-sort", "synthetic-parity",
+        "synthetic-duplicate"
+    ]
+    for dataset_name in valid_datasets:
+        try:
+            ExperimentConfig(data_config={"dataset": dataset_name})
+        except ValueError:
+            pytest.fail(f"ExperimentConfig raised ValueError for valid dataset: {dataset_name}")

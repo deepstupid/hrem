@@ -1,4 +1,5 @@
 import os
+import time
 import yaml
 import torch
 from omegaconf import OmegaConf
@@ -165,6 +166,10 @@ class TorchBaseAlgorithm(Algorithm):
             logger_callback(f"[Rank {RANK}, World Size {WORLD_SIZE}]: Epoch {_iter_id * train_epochs_per_iter}")
 
             self.train_state.model.train()
+
+            # Start timer for the training iteration
+            iter_start_time = time.time()
+
             for set_name, batch, global_batch_size in train_loader:
                 metrics = train_batch(self.training_config, self.train_state, batch, global_batch_size, rank=RANK, world_size=WORLD_SIZE)
                 if RANK == 0 and metrics is not None:
@@ -172,12 +177,21 @@ class TorchBaseAlgorithm(Algorithm):
                         logger.log(metrics, self.train_state.step)
                     progress_bar.update(self.train_state.step - progress_bar.n)
 
+            # End timer and calculate average epoch time for this iteration
+            iter_end_time = time.time()
+            iter_duration = iter_end_time - iter_start_time
+            avg_epoch_time = iter_duration / train_epochs_per_iter if train_epochs_per_iter > 0 else 0
+
+
             self.train_state.model.eval()
             metrics = evaluate(self.training_config, checkpoint_path, self.train_state, eval_loader, eval_metadata, rank=RANK, world_size=WORLD_SIZE)
             if RANK == 0 and metrics is not None:
                 if logger:
                     logger.log(metrics, self.train_state.step)
                 final_metrics = metrics
+                # Add timing metric to the final results
+                final_metrics['avg_epoch_time'] = avg_epoch_time
+
 
             if RANK == 0 and (self.training_config.checkpoint_every_eval or (_iter_id == total_iters - 1)):
                 if checkpoint_path:

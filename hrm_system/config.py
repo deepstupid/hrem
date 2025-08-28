@@ -8,7 +8,7 @@ LoggerCallback = Callable[[str], None]
 
 class DataConfig(BaseModel):
     """Configuration for the dataset."""
-    dataset: Literal["arc", "sudoku", "maze", "synthetic", "synthetic-reverse", "synthetic-sort", "synthetic-parity", "synthetic-duplicate"] = "arc"
+    dataset: Literal["arc", "sudoku", "maze", "synthetic", "synthetic-copy", "synthetic-reverse", "synthetic-sort", "synthetic-parity", "synthetic-duplicate"] = "arc"
     num_aug: int = Field(0, description="Number of augmentations for the dataset.")
     synthetic_task: Literal["copy", "reverse", "sort", "parity", "duplicate"] = Field("copy", description="Task type for synthetic dataset.")
     dataset_path: Optional[str] = Field(None, description="Path to the dataset. If None, it will be derived based on other settings.")

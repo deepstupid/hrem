@@ -214,7 +214,8 @@ class ScientificInsightGenerator:
         
         return insights
     
-    def _calculate_statistical_significance(self, data1: List[float], data2: List[float]) -> float:
+    @staticmethod
+    def calculate_statistical_significance(data1: List[float], data2: List[float]) -> float:
         """
         Calculate statistical significance between two datasets.
         
@@ -223,17 +224,15 @@ class ScientificInsightGenerator:
             data2: Second dataset
             
         Returns:
-            Confidence level (0.0-1.0)
+            p-value from a t-test
         """
         try:
             # Perform t-test
-            t_stat, p_value = stats.ttest_ind(data1, data2)
-            # Convert p-value to confidence (simplified)
-            confidence = max(0.0, min(1.0, 1.0 - p_value))
-            return confidence
+            _, p_value = stats.ttest_ind(data1, data2)
+            return p_value
         except:
-            # If statistical test fails, return moderate confidence
-            return 0.5
+            # If statistical test fails, return a non-significant p-value
+            return 1.0
     
     def classify_discovery_potential(self, insight: ScientificInsight) -> float:
         """

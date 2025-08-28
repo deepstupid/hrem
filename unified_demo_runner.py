@@ -28,6 +28,8 @@ from demo_config import DemoConfig, DemoMode
 from demo_models import get_model_configs, get_model_config, get_model_search_space
 from demo_shared import get_best_trial_info
 from demo_model_runner import run_model_with_fallback, run_trial_with_timing, get_dataset_config
+from demo_patience_manager import PatienceManager
+from demo_visualization import plot_hyperparameter_pca
 
 console = Console()
 
@@ -39,6 +41,13 @@ class DemoRunner:
         self.config = config
         self.start_time = time.time()
         self.metrics = {}
+        self.timing_metrics = {}
+        self.patience_manager = None
+        self.demo_state = {
+            "current_step": "Initializing",
+            "progress": 0,
+            "details": "Setting up the demo environment."
+        }
         
     def get_elapsed_time(self) -> float:
         """Get total elapsed time since demo start."""
@@ -67,12 +76,15 @@ class DemoRunner:
 
     def run_baseline_evaluation(self) -> Dict[str, Any]:
         """Run baseline evaluation for all models."""
-        console.print(f"[bold blue]📊 Running Baseline Evaluation ({self.config.demo_mode.value.title()} Mode)[/bold blue]")
+        self.demo_state.update({
+            "current_step": "Baseline Evaluation",
+            "progress": 0,
+            "details": "Running baseline evaluation for all models to establish initial performance and timing metrics."
+        })
+        console.print(Panel(f"[bold blue]📊 {self.demo_state['current_step']} ({self.config.demo_mode.value.title()} Mode)[/bold blue]\n[dim]{self.demo_state['details']}[/dim]", expand=False))
         
-        # Create model configurations
         model_configs = get_model_configs(self.config.models)
         
-        # Create experiment configurations
         run_config = RunConfig(
             smoke_test=self.config.smoke_test,
             study_name=f"{self.config.demo_mode.value}_baseline"
@@ -95,13 +107,11 @@ class DemoRunner:
             smoke_test=self.config.smoke_test
         )
         
-        # Create evaluation configuration
         eval_config_dict = {"n_runs": 1}
         for i, model_config in enumerate(model_configs):
             eval_config_dict[f"model_{chr(ord('a') + i)}"] = model_config
         eval_config = EvaluationConfig(**eval_config_dict)
         
-        # Run evaluation with progress bar
         baseline_results = {}
         
         with Progress(
@@ -111,17 +121,13 @@ class DemoRunner:
             TimeElapsedColumn(),
             console=console,
         ) as progress:
-            baseline_tasks = {}
-            
-            # Create progress tasks for each model
-            for model_config in model_configs:
-                baseline_tasks[model_config.name] = progress.add_task(
-                    f"[cyan]Running {model_config.name} baseline...[/cyan]", 
-                    total=None
-                )
-            
-            # Run baselines for each model
-            for model_config in model_configs:
+            total_models = len(model_configs)
+            main_task = progress.add_task("[cyan]Baseline Evaluation Progress[/cyan]", total=total_models)
+
+            for i, model_config in enumerate(model_configs):
+                self.demo_state["details"] = f"Running baseline for {model_config.name}..."
+                progress.update(main_task, description=f"[cyan]Running {model_config.name} baseline...[/cyan]")
+
                 try:
                     metrics, elapsed = self.run_model_with_timing(
                         model_config=model_config,
@@ -132,22 +138,29 @@ class DemoRunner:
                     )
                     baseline_results[model_config.name] = metrics
                     
-                    progress.update(
-                        baseline_tasks[model_config.name], 
-                        description=f"[green]✅ {model_config.name} baseline completed ({elapsed:.1f}s)[/green]"
-                    )
+                    # Store timing metrics
+                    if 'avg_epoch_time' in metrics:
+                        self.timing_metrics[model_config.name] = metrics['avg_epoch_time']
+                        console.print(f"[green]✅ {model_config.name} baseline completed in {elapsed:.1f}s (avg epoch: {metrics['avg_epoch_time']:.2f}s)[/green]")
+                    else:
+                         console.print(f"[green]✅ {model_config.name} baseline completed in {elapsed:.1f}s[/green]")
+
                 except Exception as e:
                     console.print(f"[red]Error running {model_config.name} baseline: {str(e)}[/red]")
-                    progress.update(
-                        baseline_tasks[model_config.name], 
-                        description=f"[red]❌ {model_config.name} baseline failed[/red]"
-                    )
-        
+
+                progress.update(main_task, advance=1)
+                self.demo_state["progress"] = (i + 1) / total_models
+
         return baseline_results
 
-    def run_hyperparameter_optimization(self, model_name: str = "HREM") -> Dict[str, Any]:
+    def run_hyperparameter_optimization(self, model_name: str, num_trials: int) -> Dict[str, Any]:
         """Run hyperparameter optimization for a specific model."""
-        console.print(f"[bold blue]🔍 Running Hyperparameter Optimization ({self.config.demo_mode.value.title()} Mode)[/bold blue]")
+        self.demo_state.update({
+            "current_step": "Hyperparameter Optimization",
+            "progress": 0,
+            "details": f"Optimizing {model_name} to find the best hyperparameters."
+        })
+        console.print(Panel(f"[bold blue]🔍 {self.demo_state['current_step']} for {model_name} ({self.config.demo_mode.value.title()} Mode)[/bold blue]\n[dim]{self.demo_state['details']}[/dim]", expand=False))
         
         # Get model configuration
         model_config = get_model_config(model_name)
@@ -186,7 +199,7 @@ class DemoRunner:
         
         # Setup optimization configuration
         opt_config = OptimizationConfig(
-            n_trials=self.config.loop_control.max_trials,
+            n_trials=num_trials,
             n_jobs=self.config.loop_control.n_jobs,
             n_final_runs=self.config.loop_control.n_final_runs,
             storage=f"sqlite:///experiments/optuna_{model_name}_{self.config.demo_mode.value}_demo.db",
@@ -224,14 +237,14 @@ class DemoRunner:
             best_value = float('inf')
             
             # Custom optimization loop for live updates
-            for trial_num in range(self.config.loop_control.max_trials):
+            for trial_num in range(num_trials):
                 if not self.should_continue_demo():
                     console.print("[yellow]⚠️  Demo time limit reached. Stopping optimization.[/yellow]")
                     break
                     
                 # Update display with trial progress
                 optimization_panels[-1] = (
-                    f"[cyan]Optimizing {model_name} (Trial {trial_num+1}/{self.config.loop_control.max_trials})...[/cyan]\n"
+                    f"[cyan]Optimizing {model_name} (Trial {trial_num+1}/{num_trials})...[/cyan]\n"
                     f"[bright_green]Current Best: {best_value:.4f}[/bright_green]"
                 )
                 live_display.update(Panel("\n".join(optimization_panels), title="Optimization Status"))
@@ -263,11 +276,21 @@ class DemoRunner:
                 
             live_display.update(Panel("\n".join(optimization_panels), title="Optimization Status"))
         
+        # Generate and display PCA plot
+        plot_path = plot_hyperparameter_pca(study, model_name)
+        if plot_path:
+            console.print(f"[bold green]📊 PCA plot of hyperparameter space saved to:[/bold green] [cyan]{plot_path}[/cyan]")
+
         return optimized_results
 
     def run_final_evaluation(self, baseline_results: Dict[str, Any], optimized_results: Dict[str, Any]) -> Dict[str, Any]:
         """Run final evaluation with both baseline and optimized models."""
-        console.print(f"[bold blue]🏆 Running Final Evaluation ({self.config.demo_mode.value.title()} Mode)[/bold blue]")
+        self.demo_state.update({
+            "current_step": "Final Evaluation",
+            "progress": 0,
+            "details": "Running final evaluation with optimized models to measure improvement."
+        })
+        console.print(Panel(f"[bold blue]🏆 {self.demo_state['current_step']} ({self.config.demo_mode.value.title()} Mode)[/bold blue]\n[dim]{self.demo_state['details']}[/dim]", expand=False))
         
         # Prepare models for final evaluation (baseline + optimized)
         final_results = {}
@@ -395,8 +418,6 @@ def run_demo(config: DemoConfig):
     demo_runner = DemoRunner(config)
     
     # --- STEP 1: Baseline Evaluation ---
-    console.print(Panel("[bold]📊 Step 1: Baseline Evaluation[/bold]", expand=False))
-    
     baseline_results = demo_runner.run_baseline_evaluation()
     
     # Display baseline results
@@ -411,8 +432,11 @@ def run_demo(config: DemoConfig):
         return
     
     # --- STEP 2: Hyperparameter Optimization ---
-    console.print(Panel("[bold]🔍 Step 2: Hyperparameter Optimization[/bold]", expand=False))
-    
+    demo_runner.patience_manager = PatienceManager(
+        patience_in_seconds=int(config.patience_level),
+        timing_metrics=demo_runner.timing_metrics
+    )
+
     # Run optimization for each model that has a search space
     optimized_results = {}
     for model_name in config.models:
@@ -422,7 +446,14 @@ def run_demo(config: DemoConfig):
             
         model_search_space = get_model_search_space(model_name)
         if model_search_space:
-            model_opt_results = demo_runner.run_hyperparameter_optimization(model_name)
+            num_trials = demo_runner.patience_manager.get_optimization_trial_budget(
+                model_name=model_name,
+                epochs_per_trial=config.loop_control.max_epochs,
+                time_spent_so_far=demo_runner.get_elapsed_time()
+            )
+            console.print(f"[bold cyan]Dynamic trial budget for {model_name}: {num_trials} trials[/bold cyan]")
+
+            model_opt_results = demo_runner.run_hyperparameter_optimization(model_name, num_trials)
             optimized_results.update(model_opt_results)
     
     # Display optimization results

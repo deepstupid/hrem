@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import torch
 from hrm_system.algorithms.hrem import HREMAlgorithm
 from hrm_system.config import TrainingConfig, ModelConfig, HREMParams
-from scientific_reporting import ScientificReporter
+from hrm_system.reporting import calculate_statistical_significance
 
 class RefactoringTests(unittest.TestCase):
 
@@ -66,7 +66,7 @@ class RefactoringTests(unittest.TestCase):
             ]
         }
 
-        p_values = ScientificReporter.calculate_statistical_significance(raw_results, metric='all/accuracy')
+        p_values = calculate_statistical_significance(raw_results, metric='all/accuracy')
 
         # Test ModelA vs ModelB (should be significant)
         self.assertIn("ModelB", p_values["ModelA"])

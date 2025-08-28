@@ -5,19 +5,16 @@ from textual.containers import VerticalScroll, Vertical, Horizontal
 from textual.widgets import Static, Button, Select
 from rich.text import Text
 
-from demo_config_manager import ConfigManager
-from demo_utils import ResultsDisplay
-from adaptive_demo_runner import AdaptiveDemoRunner
-from hrm_system.config import ExperimentConfig, RunConfig, EvaluationConfig
+from demo_config_manager import EnhancedConfigManager
+from unified_demo_runner import run_demo
+from demo_config import DemoConfig, DemoMode
 
 class DemoScreen(Static):
     """The main screen for running pre-configured demo challenges."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.challenges = ConfigManager.load_challenge_config()
-        self.ui_config = ConfigManager.load_ui_config()
-        self.results_displayer = ResultsDisplay(self.ui_config)
+        self.challenges = EnhancedConfigManager.load_challenge_config()
         self.selected_challenge = self.challenges[0] if self.challenges else None
 
     def compose(self) -> ComposeResult:
@@ -63,13 +60,10 @@ class DemoScreen(Static):
             self.query_one("#challenge_details").update("[dim]No challenge selected.[/dim]")
             return
 
-        difficulty_map = self.ui_config.get('challenge_selector', {}).get('difficulty_display', {})
-        difficulty = difficulty_map.get(self.selected_challenge['difficulty'], self.selected_challenge['difficulty'])
-
         details = Text.assemble(
             ("Challenge: ", "bold"), f"{self.selected_challenge['name']}\n",
             ("Description: ", "bold"), f"{self.selected_challenge['description']}\n",
-            ("Difficulty: ", "bold"), f"{difficulty}\n",
+            ("Difficulty: ", "bold"), f"{self.selected_challenge['difficulty']}\n",
             ("Models: ", "bold"), f"{', '.join(self.selected_challenge['models'])}\n",
             ("Duration: ", "bold"), f"{self.selected_challenge['duration']}"
         )
@@ -80,39 +74,24 @@ class DemoScreen(Static):
         if not self.selected_challenge:
             return
 
-        # 1. Get the Pydantic configs for the selected challenge
-        data_config, training_config, opt_config, model_configs = ConfigManager.get_configs_for_challenge(self.selected_challenge)
+        dataset_info = self.selected_challenge.get("dataset", {})
+        dataset_name = dataset_info.get("dataset", "synthetic")
+        task = ""
+        if "synthetic" in dataset_name:
+            parts = dataset_name.split("-", 1)
+            if len(parts) > 1:
+                task = parts[1]
 
-        # 2. Create the full ExperimentConfig
-        run_config = RunConfig(study_name=self.selected_challenge['id'], output_dir=f"experiments/{self.selected_challenge['id']}")
-        eval_config = EvaluationConfig()
-        eval_config.set_models(model_configs)
-
-        config = ExperimentConfig(
-            mode="evaluate", # Start in evaluate mode for baseline
-            run_config=run_config,
-            data_config=data_config,
-            training_config=training_config,
-            evaluation_config=eval_config,
-            optimization_config=opt_config
+        config = DemoConfig(
+            demo_mode=DemoMode.COMPREHENSIVE,
+            models=self.selected_challenge.get("models", ["HRM", "HREM"]),
+            dataset=dataset_name.split("-")[0],
+            task=task,
+            patience_level=self.selected_challenge.get("patience_level", "low"),
+            study_name=self.selected_challenge.get("id", "tui_demo"),
         )
-
-        # 3. Instantiate the runner and run the demo flow
-        runner = AdaptiveDemoRunner(config, self.results_displayer)
         
-        # --- Baseline ---
-        baseline_results = runner.run_baseline_evaluation()
-        self.results_displayer.display_model_detailed_stats("📊 Baseline Results", baseline_results)
-
-        # --- Optimization (Optional) ---
-        optimized_results = {}
-        if self.selected_challenge.get("optimization"):
-            optimized_results = runner.run_hyperparameter_optimization()
-            # Display optimization results using the hrm_system reporting function
-            for model_name, best_info in optimized_results.items():
-                display_optimization_results(model_name, {"best_params": best_info['params']})
-
-        # --- Final Evaluation ---
-        final_results = runner.run_final_evaluation(optimized_results)
-        display_final_comparison("🏆 Final Comparison", final_results)
-        runner.display_timing_summary()
+        # This will run the full demo, printing to the console.
+        # The TUI will be paused during this time.
+        with self.app.suspend():
+             run_demo(config)

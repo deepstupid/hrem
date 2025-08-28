@@ -9,6 +9,7 @@ from hrm_system.config import (
     TrainingConfig,
     OptimizationConfig,
     ModelConfig,
+    ExperimentConfig,
 )
 from demo_models import get_model_configs, get_model_search_space
 from dataset_manager import dataset_manager
@@ -189,7 +190,7 @@ class EnhancedConfigManager:
     @staticmethod
     def create_experiment_config(demo_config: EnhancedDemoConfig) -> ExperimentConfig:
         """Create a full experiment configuration from demo config."""
-        from hrm_system.config import ExperimentConfig, RunConfig, EvaluationConfig
+        from hrm_system.config import RunConfig, EvaluationConfig
         
         # Create run config
         run_config = RunConfig(

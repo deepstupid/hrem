@@ -71,7 +71,11 @@ def run_single_model(
 
     data_config.dataset_path = data_dir
 
-    dataset_builder_script = f"dataset/build_{data_config.dataset}_dataset.py"
+    if data_config.dataset.startswith("synthetic"):
+        dataset_builder_script = "dataset/build_synthetic_dataset.py"
+    else:
+        dataset_builder_script = f"dataset/build_{data_config.dataset}_dataset.py"
+
     if not os.path.exists(data_dir):
         build_command = [
             dataset_builder_script,

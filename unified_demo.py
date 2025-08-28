@@ -38,7 +38,7 @@ from demo_model_runner import get_dataset_config
 
 # Import our unified demo components
 from demo_enhanced_config import EnhancedDemoConfig, EnhancedConfigManager, DemoMode
-from unified_demo_runner import UnifiedDemoRunner
+from unified_demo_runner import run_demo
 
 console = Console()
 
@@ -172,148 +172,36 @@ def interactive_config_setup():
 @click.option("--models", "-m", multiple=True, default=["HRM", "HREM"], 
               type=click.Choice(list_available_models()), help="Models to evaluate.")
 @click.option("--export-metrics", is_flag=True, default=False, help="Export detailed metrics to file.")
-def unified_demo(interactive, dataset, smoke_test, study_name, patience, hardware, detail, demo_mode, models, export_metrics):
-    """Run a unified demo with adaptive instrumentation and comprehensive control.
+@click.option("--max-epochs", default=1, type=int, help="Max epochs for training.")
+@click.option("--max-trials", default=1, type=int, help="Max trials for optimization.")
+def unified_demo(interactive, dataset, smoke_test, study_name, patience, hardware, detail, demo_mode, models, export_metrics, max_epochs, max_trials):
+    """Run a unified demo with adaptive instrumentation and comprehensive control."""
+    from demo_config import DemoConfig
     
-    This function orchestrates the entire demo process:
-    1. Configuration setup (interactive or CLI)
-    2. Experiment configuration creation
-    3. Demo runner initialization
-    4. Baseline evaluation
-    5. Hyperparameter optimization (if applicable)
-    6. Final evaluation and comparison
-    7. Results display and metrics export
-    
-    Args:
-        interactive: Whether to run in interactive mode
-        dataset: Dataset to use for evaluation
-        smoke_test: Whether to run in smoke test mode
-        study_name: Name for the study
-        patience: User patience level (low/medium/high)
-        hardware: Hardware capability (low/medium/high)
-        detail: Detail level of analysis (basic/adaptive/comprehensive)
-        demo_mode: Demo mode to run (lightning/adaptive/comprehensive)
-        models: Models to evaluate
-        export_metrics: Whether to export detailed metrics to file
-    """
-    console.clear()
-    console.print(Panel("[bold magenta]🔬 Unified HRM vs HREM Demo[/bold magenta]", expand=False))
-    
-    # Get configuration
     if interactive:
-        enhanced_config = interactive_config_setup()
+        config = interactive_config_setup()
     else:
-        # Create enhanced demo configuration from CLI options
-        enhanced_config = EnhancedConfigManager.get_adaptive_config(
-            user_patience=patience,
-            hardware_capability=hardware,
-            desired_detail=detail
+        task = ""
+        if "synthetic" in dataset:
+            parts = dataset.split("-", 1)
+            if len(parts) > 1:
+                task = parts[1]
+                dataset = parts[0]
+
+        config = DemoConfig(
+            demo_mode=DemoMode(demo_mode),
+            models=list(models),
+            dataset=dataset,
+            task=task,
+            patience_level=patience,
+            study_name=study_name,
+            smoke_test=smoke_test,
         )
-        enhanced_config.demo_mode = DemoMode(demo_mode)
-        enhanced_config.dataset = dataset
-        enhanced_config.smoke_test = smoke_test
-        enhanced_config.study_name = study_name
-        enhanced_config.models = list(models)
-        enhanced_config.instrumentation.export_metrics = export_metrics
-        enhanced_config.instrumentation.collect_detailed_metrics = (detail == "comprehensive")
-    
-    # Display configuration
-    console.print("\n[bold]Demo Configuration:[/bold]")
-    config_table = Table(show_header=True, header_style="bold magenta")
-    config_table.add_column("Parameter", style="cyan")
-    config_table.add_column("Value")
-    
-    config_table.add_row("Demo Mode", enhanced_config.demo_mode.value)
-    config_table.add_row("Patience Level", enhanced_config.patience_level)
-    config_table.add_row("Dataset", enhanced_config.dataset)
-    config_table.add_row("Models", ", ".join(enhanced_config.models))
-    config_table.add_row("Max Epochs", str(enhanced_config.loop_control.max_epochs))
-    config_table.add_row("Max Trials", str(enhanced_config.loop_control.max_trials))
-    config_table.add_row("Batch Size", str(enhanced_config.loop_control.batch_size))
-    config_table.add_row("Export Metrics", str(enhanced_config.instrumentation.export_metrics))
-    
-    console.print(config_table)
-    
-    if not Confirm.ask("\nProceed with this configuration?", default=True):
-        console.print("[yellow]Demo cancelled.[/yellow]")
-        return
-    
-    # Create experiment configuration using enhanced config manager
-    experiment_config = EnhancedConfigManager.create_experiment_config(enhanced_config)
-    
-    # Initialize unified demo runner
-    demo_runner = UnifiedDemoRunner(experiment_config, enhanced_config)
-    
-    # Show demo intro
-    mode_desc = {
-        "lightning": "⚡ Lightning-Fast",
-        "adaptive": "🧠 Adaptive",
-        "comprehensive": "🔬 Comprehensive"
-    }
-    mode_text = mode_desc.get(enhanced_config.demo_mode.value, "🔬 Unified")
-    console.print(f"\n[bold green]{mode_text} Demo Starting...[/bold green]")
-    console.print("[italic]Sit back and watch the magic happen![/italic]\n")
-    
-    # --- STEP 1: Baseline Evaluation ---
-    console.print(Panel("[bold]📊 Step 1: Baseline Evaluation[/bold]", expand=False))
-    
-    baseline_results = demo_runner.run_baseline_evaluation(enhanced_config.models)
-    
-    # Display baseline results
-    display_final_comparison("📊 Baseline Results", baseline_results)
-    console.print("[bold green]✅ Baseline evaluation completed![/bold green]\n")
-    
-    # Check if we should continue with optimization
-    if not demo_runner.should_continue_demo():
-        console.print("[yellow]⚠️  Demo time limit reached. Skipping optimization phase.[/yellow]")
-        demo_runner.display_timing_summary()
-        if export_metrics:
-            demo_runner.export_detailed_metrics("unified_demo_metrics.json")
-        return
-    
-    # --- STEP 2: Hyperparameter Optimization ---
-    console.print(Panel("[bold]🔍 Step 2: Hyperparameter Optimization[/bold]", expand=False))
-    
-    optimized_results = demo_runner.run_hyperparameter_optimization(enhanced_config.models)
-    
-    # Display optimization results
-    if optimized_results:
-        console.print("[bold]Optimization Results:[/bold]")
-        for model_name, best_info in optimized_results.items():
-            console.print(f"  {model_name}: Best Loss = {best_info['value']:.4f}")
-    else:
-        console.print("[yellow]No optimization results available.[/yellow]")
-    
-    console.print("[bold green]✅ Hyperparameter optimization completed![/bold green]\n")
-    
-    # Check if we should continue with final evaluation
-    if not demo_runner.should_continue_demo():
-        console.print("[yellow]⚠️  Demo time limit reached. Skipping final evaluation.[/yellow]")
-        demo_runner.display_timing_summary()
-        if export_metrics:
-            demo_runner.export_detailed_metrics("unified_demo_metrics.json")
-        return
-    
-    # --- STEP 3: Final Comparison ---
-    console.print(Panel("[bold]🏆 Step 3: Final Comparison[/bold]", expand=False))
-    
-    final_results = demo_runner.run_final_evaluation(baseline_results, optimized_results, enhanced_config.models)
-    
-    # Display final results
-    console.print("\n[bold magenta]🎨 Final Results:[/bold magenta]")
-    display_final_comparison("🏆 Final Comparison", final_results)
-    
-    # Show exciting conclusion
-    demo_runner.display_timing_summary()
-    if export_metrics:
-        demo_runner.export_detailed_metrics("unified_demo_metrics.json")
-    
-    console.print(Panel(
-        f"[bold magenta]🎉 Unified Demo Finished Successfully![/bold magenta]\n"
-        f"[italic]Thanks for exploring HRM vs HREM with us![/italic]\n"
-        f"[bold blue]💡 Key insight: Unified approach provides the best of all worlds![/bold blue]",
-        expand=False
-    ))
+        config.loop_control.max_epochs = max_epochs
+        config.loop_control.max_trials = max_trials
+        config.instrumentation.export_metrics = export_metrics
+
+    run_demo(config)
 
 if __name__ == "__main__":
     unified_demo()

@@ -5,9 +5,10 @@ Entry point for the HRM System TUI.
 
 import sys
 import os
+import traceback
 
 # Add the project root to the path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def main():
     """Run the HRM System TUI."""
@@ -22,6 +23,7 @@ def main():
         sys.exit(1)
     except Exception as e:
         print(f"Error running TUI: {e}")
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":

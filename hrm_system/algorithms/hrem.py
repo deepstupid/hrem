@@ -96,6 +96,9 @@ class HREMAlgorithm(TorchBaseAlgorithm):
             / self.training_config.global_batch_size
         )
 
+        if self.training_config.smoke_test:
+            total_steps = 1
+
         # Use the existing TrainState class
         from hrm_system.algorithms.utils import TrainState
         

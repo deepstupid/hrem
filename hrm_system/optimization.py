@@ -71,7 +71,6 @@ def run_optimization(config: ExperimentConfig) -> Dict[str, Any]:
         objective,
         n_trials=opt_config.n_trials,
         n_jobs=opt_config.n_jobs,
-        callbacks=[config.run_config.logger_callback] if config.run_config.logger_callback else None,
     )
 
     # After optimization, prepare and return the results

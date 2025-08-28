@@ -138,50 +138,57 @@ class TorchBaseAlgorithm(Algorithm):
 
         torch.random.manual_seed(self.training_config.seed + RANK)
 
-        train_epochs_per_iter = self.training_config.eval_interval if self.training_config.eval_interval is not None else self.training_config.epochs
-        total_iters = self.training_config.epochs // train_epochs_per_iter
-
-        train_loader, train_metadata = create_dataloader(self.training_config, data_path, "train", test_set_mode=False, epochs_per_iter=train_epochs_per_iter, global_batch_size=self.training_config.global_batch_size, rank=RANK, world_size=WORLD_SIZE)
+        # Simplified dataloader creation - we'll just loop until total_steps
+        train_loader, train_metadata = create_dataloader(self.training_config, data_path, "train", test_set_mode=False, epochs_per_iter=self.training_config.epochs, global_batch_size=self.training_config.global_batch_size, rank=RANK, world_size=WORLD_SIZE)
         eval_loader, eval_metadata = create_dataloader(self.training_config, data_path, "test", test_set_mode=True, epochs_per_iter=1, global_batch_size=self.training_config.global_batch_size, rank=RANK, world_size=WORLD_SIZE)
 
         self._init_train_state(train_metadata, world_size=WORLD_SIZE, rank=RANK)
 
         if self.training_config.smoke_test:
-            self.train_state.total_steps = 1
+            self.train_state.total_steps = 2 # Set a small number of steps for smoke test
 
         progress_bar = None
         logger = None
         if RANK == 0:
-            progress_bar = tqdm.tqdm(total=self.train_state.total_steps)
+            progress_bar = tqdm.tqdm(total=self.train_state.total_steps, desc="Training")
             if checkpoint_path and run_name:
                 log_path = os.path.join(checkpoint_path, f"tmp_results_{run_name}.json")
                 logger = LocalLogger(log_path=log_path)
                 logger.log({"num_params": sum(x.numel() for x in self.train_state.model.parameters())}, step=0)
-                # save_code_and_config(checkpoint_path, self.model_config, self.training_config, logger)
-
 
         final_metrics = {}
-        for _iter_id in range(total_iters):
-            logger_callback(f"[Rank {RANK}, World Size {WORLD_SIZE}]: Epoch {_iter_id * train_epochs_per_iter}")
+        self.train_state.model.train()
 
-            self.train_state.model.train()
-            for set_name, batch, global_batch_size in train_loader:
-                metrics = train_batch(self.training_config, self.train_state, batch, global_batch_size, rank=RANK, world_size=WORLD_SIZE)
-                if RANK == 0 and metrics is not None:
-                    if logger:
-                        logger.log(metrics, self.train_state.step)
-                    progress_bar.update(self.train_state.step - progress_bar.n)
+        # Simple loop for total_steps
+        train_iterator = iter(train_loader)
+        while self.train_state.step < self.train_state.total_steps:
+            try:
+                set_name, batch, global_batch_size = next(train_iterator)
+            except StopIteration:
+                logger_callback("[yellow]Warning: Dataloader exhausted before reaching total_steps. Ending training early.[/yellow]")
+                break
 
-            self.train_state.model.eval()
-            metrics = evaluate(self.training_config, checkpoint_path, self.train_state, eval_loader, eval_metadata, rank=RANK, world_size=WORLD_SIZE)
+            metrics = train_batch(self.training_config, self.train_state, batch, global_batch_size, rank=RANK, world_size=WORLD_SIZE)
+
             if RANK == 0 and metrics is not None:
                 if logger:
                     logger.log(metrics, self.train_state.step)
-                final_metrics = metrics
+                if progress_bar:
+                    progress_bar.update(1)
 
-            if RANK == 0 and (self.training_config.checkpoint_every_eval or (_iter_id == total_iters - 1)):
-                if checkpoint_path:
-                    self.save_checkpoint(os.path.join(checkpoint_path, f"step_{self.train_state.step}.pth"))
+        if progress_bar:
+            progress_bar.close()
+
+        # Final evaluation
+        self.train_state.model.eval()
+        metrics = evaluate(self.training_config, checkpoint_path, self.train_state, eval_loader, eval_metadata, rank=RANK, world_size=WORLD_SIZE)
+        if RANK == 0 and metrics is not None:
+            if logger:
+                logger.log(metrics, self.train_state.step)
+            final_metrics = metrics
+
+        if RANK == 0 and checkpoint_path:
+            self.save_checkpoint(os.path.join(checkpoint_path, f"step_{self.train_state.step}.pth"))
 
         if logger:
             logger.finish()

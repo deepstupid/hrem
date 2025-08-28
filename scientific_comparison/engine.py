@@ -10,7 +10,11 @@ from .scheduler import DiscoveryAwareScheduler
 from .insight_generator import ScientificInsightGenerator
 from .timing_manager import ScientificTimingManager
 from demo_model_runner import run_model_with_fallback
-from hrm_system.config import TrainingConfig
+from hrm_system.config import ExperimentConfig, OptimizationConfig, RunConfig, TrainingConfig
+from demo_models import get_model_config, get_model_search_space
+from hrm_system import logger_callback
+from hrm_system.optimization import run_optimization
+
 
 console = Console()
 
@@ -26,10 +30,11 @@ class DiscoveryResults:
 class ScientificDiscoveryEngine:
     """Central orchestrator for scientific exploration process."""
     
-    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig]):
+    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], smoke_test: bool = False):
         """Initialize with a scientific challenge and algorithms to compare."""
         self.challenge = challenge
         self.algorithms = algorithms
+        self.smoke_test = smoke_test
         self.patience_manager: Optional[AdaptivePatienceManager] = None
         self.scheduler = DiscoveryAwareScheduler(algorithms, challenge)
         self.insight_generator = ScientificInsightGenerator(challenge)
@@ -101,9 +106,7 @@ class ScientificDiscoveryEngine:
             try:
                 console.print(f"[cyan]Running baseline for {algorithm_name}...[/cyan]")
                 
-                # This would use the actual model running infrastructure
-                # For now, we'll simulate the results
-                metrics = self._simulate_model_run(algorithm_name, "baseline")
+                metrics = self._run_model(algorithm_name, "baseline")
                 baseline_results[algorithm_name] = metrics
                 
                 console.print(f"[green]✅ {algorithm_name} baseline completed[/green]")
@@ -139,10 +142,10 @@ class ScientificDiscoveryEngine:
                 console.print(f"[cyan]Optimizing {algorithm_name}...[/cyan]")
                 
                 # Adjust exploration depth
-                exploration_depth = self.scheduler.adjust_algorithm_depth(algorithm_name)
+                exploration_depth = self.scheduler.adjust_algorithm_depth(algorithm_name, None)
                 
-                # Run optimization (simulated)
-                best_params = self._simulate_optimization(algorithm_name, exploration_depth)
+                # Run optimization
+                best_params = self._run_optimization(algorithm_name, exploration_depth)
                 optimization_results[algorithm_name] = {
                     'best_params': best_params,
                     'exploration_depth': exploration_depth
@@ -178,11 +181,12 @@ class ScientificDiscoveryEngine:
                 console.print(f"[cyan]Running final evaluation for {algorithm_name}...[/cyan]")
                 
                 # Run baseline evaluation
-                baseline_metrics = self._simulate_model_run(algorithm_name, "final_baseline")
+                baseline_metrics = self._run_model(algorithm_name, "final_baseline")
                 final_results[f"{algorithm_name}_baseline"] = baseline_metrics
                 
                 # Run optimized evaluation
-                optimized_metrics = self._simulate_model_run(algorithm_name, "final_optimized")
+                # For now, we'll just re-run the baseline until optimization is integrated
+                optimized_metrics = self._run_model(algorithm_name, "final_optimized")
                 final_results[f"{algorithm_name}_optimized"] = optimized_metrics
                 
                 console.print(f"[green]✅ {algorithm_name} final evaluation completed[/green]")
@@ -228,65 +232,71 @@ class ScientificDiscoveryEngine:
             console.print("[yellow]⚠️ No significant insights generated[/yellow]")
         
         return insights
+
+    def _run_model(self, algorithm_name: str, run_type: str) -> Dict[str, Any]:
+        """Run a single model evaluation."""
+        model_config = get_model_config(algorithm_name)
+        if not model_config:
+            raise ValueError(f"Could not find configuration for model: {algorithm_name}")
+
+        run_config = RunConfig(
+            smoke_test=self.smoke_test,
+            study_name=f"{self.challenge.id}_{run_type}",
+            logger_callback=logger_callback,
+        )
+        
+        training_config = TrainingConfig() # Use default training config
+        
+        metrics = run_model_with_fallback(
+            model_config=model_config,
+            run_config=run_config,
+            data_config=self.challenge.dataset,
+            training_config=training_config,
+            run_identifier=f"{algorithm_name}_{run_type}"
+        )
+        return metrics
     
-    def _simulate_model_run(self, algorithm_name: str, run_type: str) -> Dict[str, Any]:
-        """
-        Simulate model run (in a real implementation, this would run actual models).
+    def _run_optimization(self, algorithm_name: str, exploration_depth: Any) -> Dict[str, Any]:
+        """Run hyperparameter optimization for a single algorithm."""
+        console.print(f"Running optimization for {algorithm_name} with {exploration_depth.max_trials} trials...")
         
-        Args:
-            algorithm_name: Name of the algorithm
-            run_type: Type of run (baseline, final, etc.)
+        model_to_optimize = get_model_config(algorithm_name)
+        if not model_to_optimize:
+            raise ValueError(f"Could not find configuration for model: {algorithm_name}")
             
-        Returns:
-            Dictionary with metrics
-        """
-        # This is a simulation - in reality, this would call the actual model runner
-        import random
-        
-        # Simulate different performance for different algorithms
-        base_loss = 2.0
-        if "HREM" in algorithm_name:
-            base_loss = random.uniform(1.5, 2.5)  # HREM might be better or worse
-        else:
-            base_loss = random.uniform(1.8, 2.8)  # HRM baseline range
-            
-        # Add some variance for optimization
-        if "optimized" in run_type:
-            base_loss *= random.uniform(0.8, 0.95)  # Optimization should improve things
-            
-        return {
-            'all/lm_loss': base_loss,
-            'timing': random.uniform(5, 15),  # Seconds
-            'accuracy': random.uniform(0.7, 0.95),
-            'loss_history': [base_loss * (1 + random.uniform(0.1, 0.3)) for _ in range(10)]
-        }
-    
-    def _simulate_optimization(self, algorithm_name: str, exploration_depth: Any) -> Dict[str, Any]:
-        """
-        Simulate hyperparameter optimization.
-        
-        Args:
-            algorithm_name: Name of the algorithm
-            exploration_depth: Exploration depth configuration
-            
-        Returns:
-            Dictionary with best parameters
-        """
-        # This is a simulation - in reality, this would run actual optimization
-        import random
-        
-        if "HREM" in algorithm_name:
-            return {
-                'm_loc': random.randint(64, 256),
-                'd_mem': random.randint(128, 512),
-                'top_k': random.randint(4, 12),
-                'H_layers': random.randint(1, 4)
-            }
-        else:
-            return {
-                'hidden_size': random.choice([64, 128, 256]),
-                'num_heads': random.choice([1, 2, 4])
-            }
+        search_space = get_model_search_space(algorithm_name)
+        if not search_space:
+            console.print(f"[yellow]No search space defined for {algorithm_name}, skipping optimization.[/yellow]")
+            return {}
+
+        opt_config = OptimizationConfig(
+            n_trials=exploration_depth.max_trials,
+            n_jobs=1, # For now, run sequentially
+            storage="sqlite:///:memory:", # Use in-memory DB for simplicity
+            model_to_optimize=model_to_optimize,
+            search_space=search_space,
+        )
+
+        run_config = RunConfig(
+            smoke_test=self.smoke_test,
+            study_name=f"{self.challenge.id}_{algorithm_name}_opt",
+            logger_callback=logger_callback,
+        )
+
+        config = ExperimentConfig(
+            mode="optimize",
+            run_config=run_config,
+            data_config=self.challenge.dataset,
+            training_config=TrainingConfig(), # Use default
+            optimization_config=opt_config,
+        )
+
+        try:
+            results = run_optimization(config)
+            return results.get("best_params", {})
+        except Exception as e:
+            console.print(f"[red]Error during optimization for {algorithm_name}: {e}[/red]")
+            return {}
     
     def generate_insights(self) -> List[ScientificInsight]:
         """

@@ -82,7 +82,7 @@ def run_single_model(
             f"--output-dir={data_dir}",
             f"--num-aug={num_aug}"
         ]
-        if data_config.dataset == "synthetic":
+        if data_config.dataset.startswith("synthetic"):
             build_command.extend([
                 f"--task-type={data_config.synthetic_task}",
                 "--num-samples=10" if run_config.smoke_test else "--num-samples=1000"

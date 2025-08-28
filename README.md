@@ -12,37 +12,30 @@ The primary models are:
 
 ## Quick Start
 
-This project provides a unified command-line interface (CLI) through `run.py` for all major functionalities.
+This project is run through a unified command-line interface (CLI) in `run.py`. The primary entry point is the `compare` command, which uses a Scientific Discovery Engine to run a rigorous, patience-aware comparison between algorithms.
 
-### Evaluation
+### Scientific Comparison
 
-To run a side-by-side comparison of specified models:
+To run a full comparison for a pre-defined scientific challenge:
 ```bash
-# Compare HRM and HREM on the synthetic dataset
-python run.py evaluate --dataset synthetic --models HRM HREM
+# Run the default comparison challenge for sorting algorithms
+python run.py compare
 ```
 
-### Hyperparameter Optimization
-
-To run hyperparameter optimization for a model using [Optuna](https://optuna.org/):
+You can specify a different challenge and patience level:
 ```bash
-python run.py optimize --dataset arc --model HREM --n-trials 50
+# Run the long-range dependency challenge with a high patience budget
+python run.py compare --challenge long_range_dependencies --patience high
 ```
 
-### Interactive TUI
+The engine performs baseline evaluation, hyperparameter optimization, and a final comparison, then generates scientific insights about the algorithms' performance. For more details on the architecture of this engine, see `ARCHITECTURE.md`.
 
-To launch the Textual User Interface (TUI) for a more interactive experience:
-```bash
-python run.py tui
-```
-The TUI allows you to manage datasets, run evaluations, and visualize results.
+### Other Commands
 
-### Scripted Demo
-
-For a non-interactive, scripted demonstration of a full workflow (baseline evaluation, optimization, and final comparison):
-```bash
-python run.py demo
-```
+While `compare` is the recommended workflow, the following direct commands are also available:
+- `evaluate`: For a simple side-by-side model evaluation.
+- `optimize`: To run hyperparameter optimization for a single model.
+- `tui`: To launch the Textual User Interface for managing runs.
 
 ## Models
 
@@ -52,14 +45,14 @@ HRM is a recurrent architecture with two interdependent modules: a high-level mo
 ### HREM (Hierarchical Recurrent Execution Model)
 HREM is an extension of HRM with a multi-layer memory architecture and sparse memory addressing for more efficient information retrieval.
 
-## Optimization and Evaluation Framework
+## Scientific Comparison Framework
 
-The repository includes a comprehensive framework for model evaluation and hyperparameter tuning.
+The repository includes a Scientific Discovery Engine for rigorous algorithm comparison.
 
-- **Unified Interface**: All modes (evaluation, optimization, demo, TUI) are accessible through `run.py`.
-- **Hyperparameter Tuning**: Utilizes Optuna for efficient hyperparameter searches.
-- **Detailed Reporting**: Generates Markdown reports with detailed metrics and comparisons.
-- **Scientific Analysis**: Provides statistical significance testing (t-tests) to compare model performance.
+- **Unified Workflow**: The `compare` command provides an integrated workflow for baseline evaluation, hyperparameter optimization, and final comparison.
+- **Patience-Aware Execution**: The engine manages a time budget ("patience") to ensure that comparisons complete within a reasonable timeframe.
+- **Insight Generation**: The framework analyzes results to produce scientific insights into algorithm performance.
+- **Extensible**: The engine is designed to be extensible with new algorithms and scientific challenges. See `ARCHITECTURE.md` for details.
 
 ## Prerequisites
 

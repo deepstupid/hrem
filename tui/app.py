@@ -6,7 +6,6 @@ from .screens.optimization import OptimizationScreen
 from .screens.visualizer import DatasetVisualizer
 from .screens.testing import TestingScreen
 from .screens.dataset_management import DatasetManagementScreen
-from .screens.demo import DemoScreen
 from .screens.progress import ProgressScreen
 
 class HRMApp(App):
@@ -19,9 +18,7 @@ class HRMApp(App):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         yield Header()
-        with TabbedContent(initial="demo"):
-            with TabPane("Demo", id="demo"):
-                yield DemoScreen()
+        with TabbedContent(initial="evaluation"):
             with TabPane("Evaluation", id="evaluation"):
                 yield EvaluationScreen()
             with TabPane("Optimization", id="optimization"):

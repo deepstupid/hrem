@@ -5,7 +5,7 @@ from typing import Dict, Any, Tuple, List
 from .config import ChallengeConfig, AlgorithmConfig, PatienceBudget
 from .engine import ScientificDiscoveryEngine, DiscoveryResults
 from .patience_manager import ScientificInsight
-from demo_config_manager import ConfigManager
+import yaml
 from demo_models import get_model_config, get_model_search_space
 from hrm_system.config import HREMParams
 from demo_model_runner import run_trial_with_timing
@@ -17,11 +17,12 @@ class ScientificModelRunner:
     """Runner for discovery-oriented algorithm comparison."""
     
     def __init__(self):
-        self.config_manager = ConfigManager()
+        pass
         
     def run_discovery_oriented_comparison(self, challenge: ChallengeConfig, 
                                        algorithms: List[AlgorithmConfig],
-                                       patience_budget: PatienceBudget) -> DiscoveryResults:
+                                       patience_budget: PatienceBudget,
+                                       smoke_test: bool = False) -> DiscoveryResults:
         """
         Run algorithm comparison optimized for scientific discovery.
         
@@ -29,6 +30,7 @@ class ScientificModelRunner:
             challenge: Challenge configuration
             algorithms: List of algorithms to compare
             patience_budget: Patience budget for the comparison
+            smoke_test: Whether to run in smoke test mode
             
         Returns:
             DiscoveryResults with comparison results and insights
@@ -36,7 +38,7 @@ class ScientificModelRunner:
         console.print("[bold blue]🔬 Starting Scientific Algorithm Comparison[/bold blue]")
         
         # Initialize the discovery engine
-        engine = ScientificDiscoveryEngine(challenge, algorithms)
+        engine = ScientificDiscoveryEngine(challenge, algorithms, smoke_test=smoke_test)
         
         # Execute the discovery session
         results = engine.execute_discovery_session(patience_budget)
@@ -47,19 +49,24 @@ class ScientificModelRunner:
         return results
     
     def run_comparison_from_config(self, challenge_id: str, 
-                                 patience_level: str = "medium") -> DiscoveryResults:
+                                 patience_level: str = "medium",
+                                 smoke_test: bool = False) -> DiscoveryResults:
         """
         Run comparison based on configuration files.
         
         Args:
             challenge_id: ID of the challenge to run
             patience_level: Patience level (low, medium, high)
+            smoke_test: Whether to run in smoke test mode
             
         Returns:
             DiscoveryResults with comparison results and insights
         """
         # Load challenge configuration
-        challenge_configs = self.config_manager.load_challenge_config()
+        with open("config/challenge_config.yaml", "r") as f:
+            all_challenges = yaml.safe_load(f)
+
+        challenge_configs = all_challenges.get("challenges", [])
         challenge_data = None
         for config in challenge_configs:
             if config.get("id") == challenge_id:
@@ -96,7 +103,7 @@ class ScientificModelRunner:
         patience_budget = PatienceBudget(level=patience_level)
         
         # Run the comparison
-        return self.run_discovery_oriented_comparison(challenge, algorithms, patience_budget)
+        return self.run_discovery_oriented_comparison(challenge, algorithms, patience_budget, smoke_test)
     
     def _get_data_config(self, dataset_name: str) -> Any:
         """Get data configuration for a dataset."""

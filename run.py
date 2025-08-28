@@ -34,9 +34,6 @@ from hrm_system.reporting import display_final_comparison, display_optimization_
 from dataset_manager import dataset_manager
 
 
-# Import unified demo runner
-from unified_demo_runner import DemoRunner
-
 console = Console()
 
 # Import the centralized logger callback
@@ -51,9 +48,10 @@ from demo_model_runner import run_model_with_fallback
 # Import shared function for trial info
 from demo_shared import get_best_trial_info
 
+
 @click.group()
 def cli():
-    """HRM System: A unified interface for evaluation, optimization, and demos."""
+    """HRM System: A unified interface for evaluation, optimization, and scientific comparison."""
     pass
 
 @cli.command()
@@ -158,72 +156,6 @@ def optimize(dataset, n_trials, n_jobs, n_final_runs, storage, smoke_test, study
 # Import shared function
 from demo_shared import clear_optuna_studies
 
-@cli.command()
-@click.option("--dataset", default="synthetic", type=click.Choice(["arc", "sudoku", "maze", "synthetic"]), 
-              help="Dataset to use.")
-@click.option("--task", default="reverse", 
-              type=click.Choice(["copy", "reverse", "sort", "parity", "duplicate"]), 
-              help="Task for synthetic dataset.")
-@click.option("--num-aug", default=0, type=int, help="Number of augmentations.")
-@click.option("--n-trials", default=1, type=int, help="Number of optimization trials.")
-@click.option("--n-jobs", default=1, type=int, help="Number of parallel jobs for Optuna.")
-@click.option("--n-final-runs", default=1, type=int, help="Number of final comparison runs.")
-@click.option("--smoke-test", is_flag=True, default=False, help="Run in smoke test mode.")
-@click.option("--study-name", default="interactive_demo", type=str, help="Name for the study.")
-@click.option("--patience", type=click.Choice(["low", "medium", "high"]), default="low", help="User patience level.")
-@click.option(
-    "--models",
-    "-m",
-    multiple=True,
-    default=["HRM", "HREM"],
-    type=click.Choice(list_available_models()),
-    help="Models to evaluate.",
-)
-@click.option("--export-metrics", is_flag=True, default=False, help="Export detailed metrics to file.")
-def demo(dataset, task, num_aug, n_trials, n_jobs, n_final_runs, smoke_test, study_name, patience, models, export_metrics):
-    """Run an exciting, continuous side-by-side algorithm comparison with immediate animated results."""
-    from demo_config import DemoConfig, DemoMode, DemoConfigManager
-    
-    console.clear()
-    console.print(Panel("[bold blue]🚀 HRM vs HREM: Real-Time Algorithm Comparison[/bold blue]", expand=False))
-    
-    # Create demo configuration
-    config = DemoConfigManager.create_config(
-        mode=DemoMode.ADAPTIVE,  # Use adaptive mode for the demo
-        models=list(models),
-        dataset=dataset,
-        task=task,
-        smoke_test=smoke_test,
-        export_metrics=export_metrics
-    )
-    
-    # Update with command line options
-    config.loop_control.max_trials = n_trials
-    config.loop_control.n_jobs = n_jobs
-    config.loop_control.n_final_runs = n_final_runs
-    config.study_name = study_name
-    config.patience_level = patience
-    config.num_aug = num_aug
-    
-    # Import and run the unified demo runner
-    from unified_demo_runner import run_demo
-    run_demo(config)
-
-
-@cli.command()
-def demoui():
-    """Launch the interactive demo UI with menu for choosing challenges."""
-    from comprehensive_demo import interactive_config_setup
-    from unified_demo_runner import run_demo
-    
-    console.clear()
-    console.print(Panel("[bold blue]🚀 HRM vs HREM: Interactive Demo Selector[/bold blue]", expand=False))
-    
-    # Use the interactive configuration setup from comprehensive_demo
-    config = interactive_config_setup()
-    
-    # Run the demo
-    run_demo(config)
 
 
 @cli.command()
@@ -248,12 +180,13 @@ def compare(challenge, patience, smoke_test):
         
         # If no challenge specified, use default
         if not challenge:
-            challenge = "synthetic_sort"  # Default challenge
+            challenge = "quick_comparison"  # Default challenge
         
         # Run the comparison
         results = runner.run_comparison_from_config(
             challenge_id=challenge,
-            patience_level=patience
+            patience_level=patience,
+            smoke_test=smoke_test
         )
         
         console.print("[green]✅ Scientific comparison completed![/green]")

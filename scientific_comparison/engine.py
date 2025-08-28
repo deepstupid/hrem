@@ -176,7 +176,7 @@ class ScientificDiscoveryEngine:
         start_time = time.time()
         
         # Evaluate both baseline and optimized versions
-        for algorithm_name in optimization_results.keys():
+        for algorithm_name, opt_result in optimization_results.items():
             try:
                 console.print(f"[cyan]Running final evaluation for {algorithm_name}...[/cyan]")
                 
@@ -184,9 +184,13 @@ class ScientificDiscoveryEngine:
                 baseline_metrics = self._run_model(algorithm_name, "final_baseline")
                 final_results[f"{algorithm_name}_baseline"] = baseline_metrics
                 
-                # Run optimized evaluation
-                # For now, we'll just re-run the baseline until optimization is integrated
-                optimized_metrics = self._run_model(algorithm_name, "final_optimized")
+                # Run optimized evaluation with the best parameters found
+                best_params = opt_result.get('best_params')
+                optimized_metrics = self._run_model(
+                    algorithm_name,
+                    "final_optimized",
+                    hyperparams=best_params
+                )
                 final_results[f"{algorithm_name}_optimized"] = optimized_metrics
                 
                 console.print(f"[green]✅ {algorithm_name} final evaluation completed[/green]")
@@ -233,11 +237,18 @@ class ScientificDiscoveryEngine:
         
         return insights
 
-    def _run_model(self, algorithm_name: str, run_type: str) -> Dict[str, Any]:
+    def _run_model(self, algorithm_name: str, run_type: str, hyperparams: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Run a single model evaluation."""
         model_config = get_model_config(algorithm_name)
         if not model_config:
             raise ValueError(f"Could not find configuration for model: {algorithm_name}")
+
+        # If hyperparameters are provided, apply them as overrides
+        if hyperparams:
+            console.print(f"[yellow]Applying optimized hyperparameters for {algorithm_name}[/yellow]")
+            # Create a copy to avoid modifying the global config
+            model_config = model_config.model_copy(deep=True)
+            model_config.arch_overrides.update(hyperparams)
 
         run_config = RunConfig(
             smoke_test=self.smoke_test,

@@ -8,6 +8,7 @@ from .config import ChallengeConfig, AlgorithmConfig, PatienceBudget, DiscoveryC
 from .patience_manager import AdaptivePatienceManager, ExplorationPhase, ScientificInsight
 from .scheduler import DiscoveryAwareScheduler
 from .insight_generator import ScientificInsightGenerator
+from .report_generator import ScientificReportGenerator
 from .timing_manager import ScientificTimingManager
 from demo_model_runner import run_model_with_fallback
 from hrm_system.config import TrainingConfig
@@ -26,13 +27,14 @@ class DiscoveryResults:
 class ScientificDiscoveryEngine:
     """Central orchestrator for scientific exploration process."""
     
-    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig]):
+    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], config: Dict[str, Any] = None):
         """Initialize with a scientific challenge and algorithms to compare."""
         self.challenge = challenge
         self.algorithms = algorithms
+        self.config = config or {}
         self.patience_manager: Optional[AdaptivePatienceManager] = None
         self.scheduler = DiscoveryAwareScheduler(algorithms, challenge)
-        self.insight_generator = ScientificInsightGenerator(challenge)
+        self.insight_generator = ScientificInsightGenerator(challenge, algorithms, self.config.get("insights"))
         self.timing_manager = ScientificTimingManager()
         self.results: Dict[str, Any] = {}
         
@@ -218,12 +220,20 @@ class ScientificDiscoveryEngine:
         self.patience_manager.update_patience_consumption(elapsed_time, ExplorationPhase.INSIGHT_GENERATION)
         self.timing_manager.record_discovery_timing("insight_generation", elapsed_time, len(insights))
         
-        # Display insights
+        # Generate and save the report
         if insights:
-            console.print(f"[green]✅ Generated {len(insights)} scientific insights:[/green]")
-            for i, insight in enumerate(insights, 1):
-                console.print(f"  {i}. [{insight.type.upper()}] Confidence: {insight.confidence:.2f}, "
-                             f"Potential: {insight.discovery_potential:.2f}")
+            console.print(f"[green]✅ Generated {len(insights)} scientific insights.[/green]")
+            report_generator = ScientificReportGenerator(
+                challenge_name=self.challenge.name,
+                algorithm_names=[alg.name for alg in self.algorithms]
+            )
+            report_content = report_generator.generate_report(insights)
+
+            # Save the report
+            report_path = "scientific_report.md"
+            with open(report_path, "w") as f:
+                f.write(report_content)
+            console.print(f"[bold green]📄 Scientific report saved to {report_path}[/bold green]")
         else:
             console.print("[yellow]⚠️ No significant insights generated[/yellow]")
         

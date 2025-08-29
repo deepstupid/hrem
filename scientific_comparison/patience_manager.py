@@ -20,14 +20,7 @@ class TimeAllocation:
     allocated_seconds: float
     max_trials: Optional[int] = None
 
-@dataclass
-class ScientificInsight:
-    """A scientific insight generated from algorithm comparison."""
-    type: str                    # EFFICIENCY, ROBUSTNESS, SCALABILITY, etc.
-    confidence: float           # Statistical confidence level (0.0-1.0)
-    evidence: List[Dict[str, Any]]  # Supporting evidence with statistical tests
-    implications: List[str]     # Scientific implications
-    discovery_potential: float  # Future research value (0.0-1.0)
+from .insights import ScientificInsight
 
 class AdaptivePatienceManager:
     """Intelligently allocates user patience across exploration activities."""

@@ -2,7 +2,7 @@ import pytest
 from scientific_comparison.insight_generator import ScientificInsightGenerator
 from scientific_comparison.report_generator import ScientificReportGenerator
 from scientific_comparison.insights import InsightType
-from scientific_comparison.config import ChallengeConfig, ChallengeLevel, AlgorithmConfig
+from scientific_comparison.config import ChallengeConfig, ChallengeLevel, AlgorithmConfig, Hypothesis
 from hrm_system.config import DataConfig
 
 @pytest.fixture
@@ -15,7 +15,10 @@ def mock_challenge_config():
         dataset=DataConfig(path="test/path", name="test_dataset"),
         difficulty=ChallengeLevel.INTERMEDIATE,
         scientific_question="Which model is better?",
-        hypothesis_space=["HREM is better", "HRM is better"]
+        hypothesis_space=[
+            Hypothesis(description="HREM is better", metric="scalability", expected_winner="HREM", expected_loser="HRM"),
+            Hypothesis(description="HRM is better", metric="robustness", expected_winner="HRM", expected_loser="HREM")
+        ]
     )
 
 @pytest.fixture
@@ -89,10 +92,26 @@ def test_extract_convergence_insights(mock_challenge_config, mock_algorithm_conf
     assert insights[0].type == InsightType.CONVERGENCE
     assert insights[1].type == InsightType.CONVERGENCE
 
-def test_extract_robustness_insights(mock_challenge_config, mock_algorithm_configs):
+def test_extract_robustness_insights(mock_challenge_config, mock_algorithm_configs, tmp_path):
     """Test the extraction of robustness insights."""
-    config = {"statistical_significance_threshold": 0.1}
-    generator = ScientificInsightGenerator(challenge=mock_challenge_config, algorithms=mock_algorithm_configs, config=config)
+    import yaml
+    from omegaconf import OmegaConf
+
+    # Load the default config
+    base_config = OmegaConf.load("config/insight_config.yaml")
+
+    # Override with test-specific values
+    test_config_overrides = {
+        "statistical_significance_threshold": 0.1,
+        "robustness_variance_threshold": 1.1,
+    }
+    base_config.update(test_config_overrides)
+
+    config_path = tmp_path / "temp_config.yaml"
+    with open(config_path, 'w') as f:
+        OmegaConf.save(config=base_config, f=f)
+
+    generator = ScientificInsightGenerator(challenge=mock_challenge_config, algorithms=mock_algorithm_configs, config_path=str(config_path))
 
     comparison_results = {
         "HREM": {"all/lm_loss_runs": [0.1, 0.11, 0.09]},
@@ -138,6 +157,12 @@ def test_synthesize_meta_insights(mock_challenge_config, mock_algorithm_configs)
     """Test the synthesis of meta-insights."""
     generator = ScientificInsightGenerator(challenge=mock_challenge_config, algorithms=mock_algorithm_configs)
 
+    # Set the comparison_results manually for this private method test
+    generator.comparison_results = {
+        "HREM": {"all/lm_loss": 0.1, "timing": 10},
+        "HRM": {"all/lm_loss": 0.2, "timing": 20},
+    }
+
     # Mock insights for meta-insight synthesis
     mock_insights = [
         # Create mock ScientificInsight objects here
@@ -166,7 +191,7 @@ def test_generate_report(mock_challenge_config, mock_algorithm_configs):
     assert "# Scientific Comparison Report: Test Challenge" in report
     assert "HREM" in report
     assert "HRM" in report
-    assert "Efficiency Insight" in report
-    assert "Scalability Insight" in report
+    assert "Efficiency: HREM vs HRM" in report
+    assert "Scalability: HREM vs HRM" in report
     assert "speedup_factor" in report
     assert "performance_gap" in report

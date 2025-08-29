@@ -73,10 +73,12 @@ robustness_variance_threshold: 1.5
 robustness_high_variance_threshold: 3.0
 # The boost added to discovery potential if the high variance threshold is crossed.
 robustness_potential_boost: 0.25
-# Base discovery potential for a robustness insight where HREM is more robust.
-robustness_hrem_potential: 0.7
-# Base discovery potential for a robustness insight where HRM is more robust.
-robustness_hrm_potential: 0.6
+# Base discovery potential for a "surprising" robustness result (e.g., a more
+# complex model is more robust).
+robustness_surprising_potential: 0.75
+# Base discovery potential for an "expected" robustness result (e.g., a simpler
+# model is more robust).
+robustness_expected_potential: 0.5
 
 
 # --- Generalization Insights ---
@@ -103,3 +105,20 @@ adaptability_potential: 0.75
 # The minimum number of "wins" for an algorithm to generate a meta-insight
 # about its dominance.
 meta_insight_threshold: 3
+
+
+# --- Insight Pipeline ---
+# Defines the sequence of insight extraction modules to run.
+# The order matters, especially for meta-insights which should run after
+# the primary insights.
+insight_pipeline:
+  - efficiency
+  - scalability
+  - convergence
+  - robustness
+  - generalization
+  - adaptability
+  - failure
+  - meta
+  - generated_hypothesis
+  - test_hypothesis

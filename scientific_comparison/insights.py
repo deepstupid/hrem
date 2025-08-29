@@ -15,6 +15,7 @@ class InsightType(Enum):
     META = "meta"
     FAILURE = "failure"
     HYPOTHESIS = "hypothesis"
+    GENERATED_HYPOTHESIS = "generated_hypothesis"
 
 @dataclass
 class Evidence:

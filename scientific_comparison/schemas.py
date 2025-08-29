@@ -27,8 +27,8 @@ class InsightConfigSchema(BaseModel):
     robustness_variance_threshold: float = Field(..., gt=0)
     robustness_high_variance_threshold: float = Field(..., gt=0)
     robustness_potential_boost: float = Field(..., ge=0)
-    robustness_hrem_potential: float = Field(..., ge=0, le=1)
-    robustness_hrm_potential: float = Field(..., ge=0, le=1)
+    robustness_surprising_potential: float = Field(..., ge=0, le=1)
+    robustness_expected_potential: float = Field(..., ge=0, le=1)
 
     generalization_drop_off_threshold: float = Field(..., ge=0)
     generalization_potential: float = Field(..., ge=0, le=1)
@@ -37,3 +37,5 @@ class InsightConfigSchema(BaseModel):
     adaptability_potential: float = Field(..., ge=0, le=1)
 
     meta_insight_threshold: int = Field(..., gt=0)
+
+    insight_pipeline: List[str] = Field(...)

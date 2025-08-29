@@ -1,6 +1,7 @@
 """Scientific insight generation from algorithm comparisons."""
 
 import math
+import itertools
 import numpy as np
 from typing import List, Dict, Any, Tuple
 from scipy import stats
@@ -20,10 +21,25 @@ class ScientificInsightGenerator:
         self.algorithms = {alg.name: alg for alg in algorithms}
         raw_config = OmegaConf.load(config_path)
         self.config = InsightConfigSchema(**raw_config).model_dump()
+
+        # Map insight types to their extraction methods
+        self.comparison_results = None
+        self.insight_method_map = {
+            "efficiency": self._extract_efficiency_insights,
+            "scalability": self._extract_scalability_insights,
+            "convergence": self._extract_convergence_insights,
+            "robustness": self._extract_robustness_insights,
+            "generalization": self._extract_generalization_insights,
+            "adaptability": self._extract_adaptability_insights,
+            "failure": self._extract_failure_insights,
+            "meta": self._synthesize_meta_insights,
+            "test_hypothesis": self._test_hypotheses,
+            "generated_hypothesis": self._generate_hypotheses,
+        }
         
     def extract_insights(self, comparison_results: Dict[str, Any]) -> List[ScientificInsight]:
         """
-        Extract scientific insights from comparison results.
+        Extract scientific insights from comparison results based on the configured pipeline.
         
         Args:
             comparison_results: Results from algorithm comparison
@@ -31,34 +47,24 @@ class ScientificInsightGenerator:
         Returns:
             List of ScientificInsight objects
         """
+        self.comparison_results = comparison_results
         insights = []
-        
-        # Extract efficiency insights
-        insights.extend(self._extract_efficiency_insights(comparison_results))
-        
-        # Extract scalability insights
-        insights.extend(self._extract_scalability_insights(comparison_results))
-        
-        # Extract convergence insights
-        insights.extend(self._extract_convergence_insights(comparison_results))
-        
-        # Extract robustness insights
-        insights.extend(self._extract_robustness_insights(comparison_results))
+        pipeline = self.config.get("insight_pipeline", [])
 
-        # Extract generalization insights
-        insights.extend(self._extract_generalization_insights(comparison_results))
+        for insight_type in pipeline:
+            method = self.insight_method_map.get(insight_type)
+            if not method:
+                print(f"Warning: Unknown insight type '{insight_type}' in pipeline.")
+                continue
 
-        # Extract adaptability insights
-        insights.extend(self._extract_adaptability_insights(comparison_results))
+            # Methods that depend on prior insights vs. raw results
+            if insight_type in ["meta", "test_hypothesis", "generated_hypothesis"]:
+                new_insights = method(insights)
+            else:
+                new_insights = method(comparison_results)
 
-        # Synthesize meta-insights from the collected individual insights
-        insights.extend(self._synthesize_meta_insights(insights))
-
-        # Test hypotheses against the generated insights
-        insights.extend(self._test_hypotheses(insights))
-
-        # Extract failure insights
-        insights.extend(self._extract_failure_insights(comparison_results))
+            if new_insights:
+                insights.extend(new_insights)
         
         return insights
 
@@ -187,104 +193,152 @@ class ScientificInsightGenerator:
                     ]
                 ))
 
-        # --- 2. Trade-off Analysis ---
-        efficiency_winner = None
-        scalability_winner = None
-        for insight in insights:
-            if insight.type == InsightType.EFFICIENCY:
-                efficiency_winner = self._get_winner_from_summary(insight.summary)
-            if insight.type == InsightType.SCALABILITY:
-                scalability_winner = self._get_winner_from_summary(insight.summary)
+        # --- 2. Pareto Front Analysis for Performance vs. Efficiency ---
 
-        if efficiency_winner and scalability_winner and efficiency_winner != scalability_winner:
-            meta_insights.append(ScientificInsight(
-                type=InsightType.META,
-                title="Performance vs. Efficiency Trade-off",
-                confidence=0.9, # High confidence as it's based on two conflicting insights
-                discovery_potential=0.8,
-                implications=[
-                    f"A trade-off between performance and efficiency was observed.",
-                    f"{scalability_winner} delivers better performance (scalability), while {efficiency_winner} is more computationally efficient."
-                ],
-                recommendations=[
-                    f"Choose {scalability_winner} for maximum performance if resources are not a constraint.",
-                    f"Choose {efficiency_winner} for resource-constrained environments where speed is critical."
-                ],
-                evidence=[
-                    Evidence(metric_name="performance_winner", metric_value=scalability_winner),
-                    Evidence(metric_name="efficiency_winner", metric_value=efficiency_winner),
+        # Gather performance (loss) and efficiency (timing) data
+        perf_data = {
+            name: results.get('all/lm_loss')
+            for name, results in self.comparison_results.items()
+            if results.get('all/lm_loss') is not None and not math.isnan(results.get('all/lm_loss'))
+        }
+
+        time_data = {
+            name: results.get('timing')
+            for name, results in self.comparison_results.items()
+            if results.get('timing') is not None
+        }
+
+        # Combine into a list of (name, loss, time) tuples
+        combined_data = [
+            (name, perf_data.get(name), time_data.get(name))
+            for name in self.algorithms
+            if name in perf_data and name in time_data
+        ]
+
+        if len(combined_data) >= 2:
+            pareto_front = []
+            for i, (name1, loss1, time1) in enumerate(combined_data):
+                is_dominated = False
+                for j, (name2, loss2, time2) in enumerate(combined_data):
+                    if i == j:
+                        continue
+                    # Check if p2 dominates p1 (lower is better for both)
+                    if loss2 <= loss1 and time2 <= time1 and (loss2 < loss1 or time2 < time1):
+                        is_dominated = True
+                        break
+                if not is_dominated:
+                    pareto_front.append((name1, loss1, time1))
+
+            if len(pareto_front) > 1 or (len(pareto_front) == 1 and len(combined_data) > 1):
+                # Generate an insight if there's a trade-off (multiple optimal points) or one algorithm dominates all others.
+
+                # Sort front for consistent reporting: by loss, then by time
+                pareto_front.sort(key=lambda x: (x[1], x[2]))
+
+                implications = [
+                    "A trade-off between performance (lower loss) and efficiency (lower time) was identified.",
+                    f"The following {len(pareto_front)} algorithm(s) represent the optimal choices along this trade-off frontier (the Pareto Front):"
                 ]
-            ))
+
+                recommendations = []
+                evidence_list = []
+
+                for name, loss, time in pareto_front:
+                    implications.append(f"- **{name}**: Achieves a loss of {loss:.4f} in {time:.2f} seconds.")
+                    recommendations.append(f"Consider **{name}** for its specific balance of performance and efficiency.")
+                    evidence_list.append(Evidence(metric_name="pareto_optimal_point", metric_value=name, description=f"Loss: {loss:.4f}, Time: {time:.2f}s"))
+
+                if len(pareto_front) == 1:
+                    winner = pareto_front[0][0]
+                    title = f"Dominant Performance & Efficiency: {winner}"
+                    summary = f"{winner} is dominant, outperforming all other algorithms in either performance, efficiency, or both."
+                else:
+                    title = "Performance vs. Efficiency Trade-off (Pareto Front)"
+                    summary = f"Found a Pareto front with {len(pareto_front)} optimal algorithms, revealing a trade-off between performance and efficiency."
+
+
+                meta_insights.append(ScientificInsight(
+                    type=InsightType.META,
+                    title=title,
+                    summary=summary,
+                    confidence=0.9,
+                    discovery_potential=0.85,
+                    implications=implications,
+                    recommendations=recommendations,
+                    evidence=evidence_list
+                ))
 
         return meta_insights
 
     def _extract_efficiency_insights(self, comparison_results: Dict[str, Any]) -> List[ScientificInsight]:
-        """Extract efficiency-related insights."""
+        """Extract efficiency-related insights by comparing all pairs of algorithms."""
         insights = []
         
-        # Get timing data
-        timing_data = {}
-        for alg_name, results in comparison_results.items():
-            if 'timing' in results:
-                timing_data[alg_name] = results['timing']
+        timing_data = {
+            name: results['timing']
+            for name, results in comparison_results.items()
+            if 'timing' in results and results['timing'] is not None
+        }
 
         if len(timing_data) < 2:
             return insights
 
-        alg_names = list(timing_data.keys())
-        times = list(timing_data.values())
-        
-        # Compare efficiency
-        if len(times) >= 2:
-            # Calculate relative efficiency
-            faster_idx = 0 if times[0] < times[1] else 1
-            slower_idx = 1 - faster_idx
+        for (alg1_name, time1), (alg2_name, time2) in itertools.combinations(timing_data.items(), 2):
+            if time1 == 0 or time2 == 0:
+                continue
 
-            # Avoid division by zero
-            if times[faster_idx] == 0:
-                return insights
+            if time1 < time2:
+                faster_model_name, slower_model_name = alg1_name, alg2_name
+                speedup = time2 / time1
+            else:
+                faster_model_name, slower_model_name = alg2_name, alg1_name
+                speedup = time1 / time2
 
-            speedup = times[slower_idx] / times[faster_idx]
-            
             if speedup > self.config["efficiency_speedup_threshold"]:
-                faster_model_name = alg_names[faster_idx]
-                slower_model_name = alg_names[slower_idx]
-                
-                # Base discovery potential on surprise
                 faster_alg_config = self.algorithms.get(faster_model_name)
                 slower_alg_config = self.algorithms.get(slower_model_name)
 
                 causal_attribution = None
                 if faster_alg_config and slower_alg_config:
+                    # Primary causal attribution from complexity profile
+                    if faster_alg_config.complexity_profile and slower_alg_config.complexity_profile:
+                        shared_metrics = set(faster_alg_config.complexity_profile.keys()) & set(slower_alg_config.complexity_profile.keys())
+                        for metric in shared_metrics:
+                            val_faster = faster_alg_config.complexity_profile[metric]
+                            val_slower = slower_alg_config.complexity_profile[metric]
+                            if isinstance(val_faster, (int, float)) and isinstance(val_slower, (int, float)) and val_faster < val_slower:
+                                causal_attribution = f"The superior efficiency of {faster_model_name} may be attributed to its lower {metric} ({val_faster} vs. {val_slower} for {slower_model_name})."
+                                break # Stop after finding one explanation
+
                     is_surprising = faster_alg_config.complexity > slower_alg_config.complexity
+                    base_potential = self.config["efficiency_surprising_potential"] if is_surprising else self.config["efficiency_expected_potential"]
+
                     if is_surprising:
-                        # Surprising result: more complex model is faster
-                        base_potential = self.config["efficiency_surprising_potential"]
                         implication_text = f"{faster_model_name} is surprisingly more computationally efficient than {slower_model_name} despite its higher complexity."
-                        if faster_alg_config.theoretical_advantages:
+                        # Secondary attribution if primary is missing
+                        if not causal_attribution and faster_alg_config.theoretical_advantages:
                             advantages = ', '.join(faster_alg_config.theoretical_advantages)
                             causal_attribution = f"The surprising efficiency of {faster_model_name} could be attributed to its {advantages}, which may overcome its inherent complexity on this specific challenge."
                     else:
-                        # Expected result: simpler model is faster
-                        base_potential = self.config["efficiency_expected_potential"]
                         implication_text = f"{faster_model_name} is more computationally efficient than {slower_model_name}, as expected for a simpler model."
-                        if slower_alg_config.theoretical_limitations:
+                        # Secondary attribution if primary is missing
+                        if not causal_attribution and slower_alg_config.theoretical_limitations:
                             limitations = ', '.join(slower_alg_config.theoretical_limitations)
                             causal_attribution = f"The slower performance of {slower_model_name} aligns with its theoretical limitations, such as {limitations}."
                 else:
                     base_potential = self.config["efficiency_expected_potential"]
                     implication_text = f"{faster_model_name} is more computationally efficient than {slower_model_name}."
 
-
-                # Boost potential based on magnitude of speedup
                 boost_factor = self.config["efficiency_potential_boost"] if speedup > self.config["efficiency_high_speedup_threshold"] else 0.0
                 discovery_potential = self.classify_discovery_potential(base_potential, boost_factor)
                 confidence = self._calculate_confidence_from_effect(speedup - 1, k=2)
 
                 insights.append(ScientificInsight(
                     type=InsightType.EFFICIENCY,
+                    title=f"Efficiency: {faster_model_name} vs {slower_model_name}",
                     confidence=confidence,
                     discovery_potential=discovery_potential,
+                    summary=f"{faster_model_name} is {speedup:.2f}x faster than {slower_model_name}.",
                     implications=[
                         implication_text,
                         f"The {speedup:.2f}x speedup could be critical for resource-constrained environments."
@@ -293,7 +347,7 @@ class ScientificInsightGenerator:
                         Evidence(
                             metric_name="speedup_factor",
                             metric_value=round(speedup, 2),
-                            description=f"{faster_model_name} vs {slower_model_name}",
+                            description=f"{faster_model_name} ({time1:.2f}s) vs {slower_model_name} ({time2:.2f}s)",
                             effect_size=round(speedup, 2)
                         )
                     ],
@@ -303,92 +357,93 @@ class ScientificInsightGenerator:
         return insights
     
     def _extract_scalability_insights(self, comparison_results: Dict[str, Any]) -> List[ScientificInsight]:
-        """Extract scalability-related insights based on actual performance."""
+        """Extract scalability-related insights by comparing all pairs of algorithms."""
         insights = []
 
-        # Get performance data (final loss)
-        performance_data = {}
-        for alg_name, results in comparison_results.items():
-            if 'all/lm_loss' in results:
-                performance_data[alg_name] = results['all/lm_loss']
+        performance_data = {
+            name: results['all/lm_loss']
+            for name, results in comparison_results.items()
+            if 'all/lm_loss' in results and results['all/lm_loss'] is not None and not math.isnan(results['all/lm_loss'])
+        }
 
         if len(performance_data) < 2:
             return insights
 
-        alg_names = list(performance_data.keys())
-        losses = list(performance_data.values())
+        for (alg1_name, loss1), (alg2_name, loss2) in itertools.combinations(performance_data.items(), 2):
+            if loss1 < loss2:
+                winner_name, loser_name = alg1_name, alg2_name
+                winner_loss, loser_loss = loss1, loss2
+            else:
+                winner_name, loser_name = alg2_name, alg1_name
+                winner_loss, loser_loss = loss2, loss1
 
-        # This method assumes a comparison between two algorithms.
-        # For a more general implementation, this logic would need to be extended.
-        if len(alg_names) != 2:
-            return insights
+            performance_gap = (loser_loss - winner_loss) / loser_loss if loser_loss > 0 else 0
 
-        alg1_name, alg2_name = alg_names[0], alg_names[1]
-        alg1_loss, alg2_loss = losses[0], losses[1]
+            if performance_gap < self.config["scalability_performance_gap_threshold"]:
+                continue
 
-        # Determine winner and loser
-        if alg1_loss < alg2_loss:
-            winner, loser = alg1_name, alg2_name
-            performance_gap = (alg2_loss - alg1_loss) / alg2_loss if alg2_loss > 0 else 0
-        else:
-            winner, loser = alg2_name, alg1_name
-            performance_gap = (alg1_loss - alg2_loss) / alg1_loss if alg1_loss > 0 else 0
+            implication = f"{winner_name} outperforms {loser_name} on the '{self.challenge.name}' challenge, suggesting better scalability with task complexity."
+            recommendation = f"For tasks similar to '{self.challenge.name}', {winner_name} is the recommended architecture due to its superior scalability."
 
-        implication = f"{winner} outperforms {loser} on the '{self.challenge.name}' challenge, suggesting better scalability with task complexity."
-        recommendation = f"For tasks similar to '{self.challenge.name}', {winner} is the recommended architecture due to its superior scalability."
+            base_potential = 0.5
+            causal_attribution = None
+            winner_config = self.algorithms.get(winner_name)
+            loser_config = self.algorithms.get(loser_name)
 
-        # Determine discovery potential and causal attribution based on surprise
-        base_potential = 0.5  # Default
-        causal_attribution = None
-        winner_config = self.algorithms.get(winner)
-        loser_config = self.algorithms.get(loser)
+            if winner_config and loser_config:
+                # Primary causal attribution from complexity profile
+                if winner_config.complexity_profile and loser_config.complexity_profile:
+                    shared_metrics = set(winner_config.complexity_profile.keys()) & set(loser_config.complexity_profile.keys())
+                    for metric in shared_metrics:
+                        val_winner = winner_config.complexity_profile[metric]
+                        val_loser = loser_config.complexity_profile[metric]
+                        if isinstance(val_winner, (int, float)) and isinstance(val_loser, (int, float)) and val_winner > val_loser:
+                            causal_attribution = f"The superior performance of {winner_name} may be due to its higher {metric} ({val_winner} vs. {val_loser} for {loser_name}), allowing for greater capacity."
+                            break
 
-        if winner_config and loser_config:
-            is_winner_less_complex = winner_config.complexity < loser_config.complexity
-            is_hard_task = self.challenge.difficulty in [ChallengeLevel.ADVANCED, ChallengeLevel.INTERMEDIATE]
+                is_winner_less_complex = winner_config.complexity < loser_config.complexity
+                is_hard_task = self.challenge.difficulty in [ChallengeLevel.ADVANCED, ChallengeLevel.INTERMEDIATE]
 
-            # Causal attribution based on theoretical advantages/limitations
-            if winner_config.theoretical_advantages:
-                advantages = ', '.join(winner_config.theoretical_advantages)
-                causal_attribution = f"{winner}'s superior scalability may be due to its {advantages}."
-            elif loser_config.theoretical_limitations:
-                limitations = ', '.join(loser_config.theoretical_limitations)
-                causal_attribution = f"{loser}'s difficulty in scaling could be linked to its {limitations}."
+                # Secondary attribution if primary is missing
+                if not causal_attribution:
+                    if winner_config.theoretical_advantages:
+                        advantages = ', '.join(winner_config.theoretical_advantages)
+                        causal_attribution = f"{winner_name}'s superior scalability may be due to its {advantages}."
+                    elif loser_config.theoretical_limitations:
+                        limitations = ', '.join(loser_config.theoretical_limitations)
+                        causal_attribution = f"{loser_name}'s difficulty in scaling could be linked to its {limitations}."
 
-            # Surprising if a less complex model wins on a hard task
-            if is_winner_less_complex and is_hard_task:
-                base_potential = self.config["scalability_surprising_potential_hard"]
-            # Surprising if a more complex model wins decisively on an easy task
-            elif not is_winner_less_complex and not is_hard_task and performance_gap > self.config["scalability_performance_gap_threshold"]:
-                base_potential = self.config["scalability_surprising_potential_easy"]
-            # Expected for more complex model to win on hard tasks
-            elif not is_winner_less_complex and is_hard_task:
-                base_potential = self.config["scalability_expected_potential_hard"]
-            # Expected for less complex model to win on easy tasks
-            elif is_winner_less_complex and not is_hard_task:
-                base_potential = self.config["scalability_expected_potential_easy"]
+                if is_winner_less_complex and is_hard_task:
+                    base_potential = self.config["scalability_surprising_potential_hard"]
+                elif not is_winner_less_complex and not is_hard_task and performance_gap > self.config["scalability_performance_gap_threshold"]:
+                    base_potential = self.config["scalability_surprising_potential_easy"]
+                elif not is_winner_less_complex and is_hard_task:
+                    base_potential = self.config["scalability_expected_potential_hard"]
+                elif is_winner_less_complex and not is_hard_task:
+                    base_potential = self.config["scalability_expected_potential_easy"]
 
-        # Boost potential if the performance gap is large
-        boost_factor = self.config["scalability_potential_boost"] if performance_gap > self.config["scalability_high_performance_gap_threshold"] else 0.0
-        discovery_potential = self.classify_discovery_potential(base_potential, boost_factor)
-        confidence = self._calculate_confidence_from_effect(performance_gap, k=5)
+            boost_factor = self.config["scalability_potential_boost"] if performance_gap > self.config["scalability_high_performance_gap_threshold"] else 0.0
+            discovery_potential = self.classify_discovery_potential(base_potential, boost_factor)
+            confidence = self._calculate_confidence_from_effect(performance_gap, k=5)
 
-        insights.append(ScientificInsight(
-            type=InsightType.SCALABILITY,
-            confidence=confidence,
-            discovery_potential=discovery_potential,
-            implications=[implication],
-            recommendations=[recommendation],
-            causal_attribution=causal_attribution,
-            evidence=[
-                Evidence(
-                    metric_name="performance_gap",
-                    metric_value=f"{performance_gap:.2%}",
-                    description=f"Final loss comparison between {winner} ({list(performance_data.values())[0]:.4f}) and {loser} ({list(performance_data.values())[1]:.4f})",
-                    effect_size=performance_gap
-                )
-            ]
-        ))
+            insights.append(ScientificInsight(
+                type=InsightType.SCALABILITY,
+                title=f"Scalability: {winner_name} vs {loser_name}",
+                confidence=confidence,
+                discovery_potential=discovery_potential,
+                summary=f"{winner_name} outperforms {loser_name} by {performance_gap:.2%}.",
+                implications=[implication],
+                recommendations=[recommendation],
+                causal_attribution=causal_attribution,
+                evidence=[
+                    Evidence(
+                        metric_name="performance_gap",
+                        metric_value=f"{performance_gap:.2%}",
+                        description=f"Final loss comparison: {winner_name} ({winner_loss:.4f}) vs {loser_name} ({loser_loss:.4f})",
+                        effect_size=performance_gap
+                    )
+                ]
+            ))
 
         return insights
 
@@ -441,6 +496,7 @@ class ScientificInsightGenerator:
         if len(convergence_data) >= 2:
             convergence_speed = {}
             for alg_name, loss_history in convergence_data.items():
+                if not loss_history: continue
                 initial_loss = loss_history[0]
                 final_loss = loss_history[-1]
                 # Threshold: point at which 90% of the learning is done
@@ -449,42 +505,48 @@ class ScientificInsightGenerator:
                 steps_to_converge = next((i for i, loss in enumerate(loss_history) if loss <= threshold), len(loss_history))
                 convergence_speed[alg_name] = steps_to_converge
 
-            if len(convergence_speed) >= 2:
-                faster_alg, faster_steps = min(convergence_speed.items(), key=lambda item: item[1])
-                slower_alg, slower_steps = max(convergence_speed.items(), key=lambda item: item[1])
+            for (alg1_name, steps1), (alg2_name, steps2) in itertools.combinations(convergence_speed.items(), 2):
+                if steps1 == 0 or steps2 == 0: continue
 
-                if faster_steps > 0:
-                    speed_ratio = slower_steps / faster_steps
-                    if speed_ratio > self.config["convergence_speed_ratio_threshold"]:
-                        faster_alg_config = self.algorithms.get(faster_alg)
-                        slower_alg_config = self.algorithms.get(slower_alg)
+                if steps1 < steps2:
+                    faster_alg, slower_alg = alg1_name, alg2_name
+                    faster_steps, slower_steps = steps1, steps2
+                else:
+                    faster_alg, slower_alg = alg2_name, alg1_name
+                    faster_steps, slower_steps = steps2, steps1
 
-                        causal_attribution = None
-                        if faster_alg_config and faster_alg_config.theoretical_advantages:
-                            advantages = ', '.join(faster_alg_config.theoretical_advantages)
-                            causal_attribution = f"The faster convergence of {faster_alg} might be explained by its {advantages}."
+                speed_ratio = slower_steps / faster_steps
+                if speed_ratio > self.config["convergence_speed_ratio_threshold"]:
+                    faster_alg_config = self.algorithms.get(faster_alg)
+                    slower_alg_config = self.algorithms.get(slower_alg)
 
-                        is_surprising = faster_alg_config and slower_alg_config and faster_alg_config.complexity > slower_alg_config.complexity
-                        base_potential = self.config["convergence_potential_surprising"] if is_surprising else self.config["convergence_potential_expected"]
-                        discovery_potential = self.classify_discovery_potential(base_potential)
-                        confidence = self._calculate_confidence_from_effect(speed_ratio - 1, k=2)
+                    causal_attribution = None
+                    if faster_alg_config and faster_alg_config.theoretical_advantages:
+                        advantages = ', '.join(faster_alg_config.theoretical_advantages)
+                        causal_attribution = f"The faster convergence of {faster_alg} might be explained by its {advantages}."
 
-                        insights.append(ScientificInsight(
-                            type=InsightType.CONVERGENCE,
-                            title="Convergence Speed Analysis",
-                            confidence=confidence,
-                            discovery_potential=discovery_potential,
-                            implications=[
-                                f"{faster_alg} converges {speed_ratio:.2f}x faster than {slower_alg}, reducing training time.",
-                                "This suggests a more efficient learning process."
-                            ],
-                            causal_attribution=causal_attribution,
-                            evidence=[
-                                Evidence(metric_name="convergence_speed_ratio", metric_value=round(speed_ratio, 2), effect_size=round(speed_ratio, 2)),
-                                Evidence(metric_name="steps_to_converge", metric_value=faster_steps, description=f"Algorithm: {faster_alg}"),
-                                Evidence(metric_name="steps_to_converge", metric_value=slower_steps, description=f"Algorithm: {slower_alg}")
-                            ]
-                        ))
+                    is_surprising = faster_alg_config and slower_alg_config and faster_alg_config.complexity > slower_alg_config.complexity
+                    base_potential = self.config["convergence_potential_surprising"] if is_surprising else self.config["convergence_potential_expected"]
+                    discovery_potential = self.classify_discovery_potential(base_potential)
+                    confidence = self._calculate_confidence_from_effect(speed_ratio - 1, k=2)
+
+                    insights.append(ScientificInsight(
+                        type=InsightType.CONVERGENCE,
+                        title=f"Convergence Speed: {faster_alg} vs {slower_alg}",
+                        confidence=confidence,
+                        discovery_potential=discovery_potential,
+                        summary=f"{faster_alg} converges {speed_ratio:.2f}x faster than {slower_alg}.",
+                        implications=[
+                            f"{faster_alg} converges significantly faster than {slower_alg}, which can reduce training time and cost.",
+                            "This suggests a more efficient learning process or a better-suited architecture for the problem's loss landscape."
+                        ],
+                        causal_attribution=causal_attribution,
+                        evidence=[
+                            Evidence(metric_name="convergence_speed_ratio", metric_value=round(speed_ratio, 2), effect_size=round(speed_ratio, 2)),
+                            Evidence(metric_name="steps_to_converge", metric_value=faster_steps, description=f"Algorithm: {faster_alg}"),
+                            Evidence(metric_name="steps_to_converge", metric_value=slower_steps, description=f"Algorithm: {slower_alg}")
+                        ]
+                    ))
         
         return insights
     
@@ -526,7 +588,7 @@ class ScientificInsightGenerator:
                     causal_attribution = f"The superior robustness of {most_robust_alg} could be due to its {advantages}."
 
                 is_surprising = most_robust_config and least_robust_config and most_robust_config.complexity > least_robust_config.complexity
-                base_potential = self.config["robustness_hrem_potential"] if is_surprising else self.config["robustness_hrm_potential"]
+                base_potential = self.config["robustness_surprising_potential"] if is_surprising else self.config["robustness_expected_potential"]
                 boost_factor = self.config["robustness_potential_boost"] if stdevs[least_robust_alg] > stdevs[most_robust_alg] * self.config["robustness_high_variance_threshold"] else 0.0
                 discovery_potential = self.classify_discovery_potential(base_potential, boost_factor)
 
@@ -650,3 +712,62 @@ class ScientificInsightGenerator:
                         evidence=[Evidence(metric_name="finetuning_improvement", metric_value=f"{improvement:.2%}", effect_size=improvement)]
                     ))
         return insights
+
+    def _generate_hypotheses(self, insights: List[ScientificInsight]) -> List[ScientificInsight]:
+        """Generate new hypotheses based on existing insights."""
+        generated_hypotheses = []
+
+        # Pattern 1: Surprising Performance
+        for insight in insights:
+            full_text = insight.summary + " ".join(insight.implications)
+            if insight.type in [InsightType.EFFICIENCY, InsightType.SCALABILITY] and "surprisingly" in full_text:
+                winner_name = self._get_winner_from_summary(insight.summary)
+                if winner_name:
+                    hypothesis_text = f"The established complexity score for {winner_name} may not accurately reflect its practical performance on this problem class. Further investigation into its architectural efficiencies is warranted."
+                    generated_hypotheses.append(ScientificInsight(
+                        type=InsightType.GENERATED_HYPOTHESIS,
+                        title="Generated Hypothesis: Surprising Performance",
+                        summary=hypothesis_text,
+                        confidence=0.7, # This is a generated hypothesis, so confidence is moderate
+                        discovery_potential=0.9,
+                        implications=[hypothesis_text],
+                        recommendations=[f"Ablation studies on {winner_name}'s architecture could reveal the source of its surprising performance."]
+                    ))
+
+        # Pattern 2: Dominant Algorithm
+        for insight in insights:
+            if insight.type == InsightType.META and "Dominant Performance" in insight.title:
+                winner = insight.evidence[0].metric_value
+                categories = [e.metric_value for e in insight.evidence if e.metric_name == 'winning_categories']
+                untested_areas = [t for t in ["robustness", "adaptability", "generalization"] if t not in categories]
+
+                if untested_areas:
+                    hypothesis_text = f"Given its dominant performance in multiple categories, {winner} is likely to also excel in related areas such as {untested_areas[0]}."
+                    generated_hypotheses.append(ScientificInsight(
+                        type=InsightType.GENERATED_HYPOTHESIS,
+                        title=f"Generated Hypothesis: Extended Dominance of {winner}",
+                        summary=hypothesis_text,
+                        confidence=0.65,
+                        discovery_potential=0.8,
+                        implications=[hypothesis_text],
+                        recommendations=[f"Run further experiments to test the performance of {winner} on {untested_areas[0]}."]
+                    ))
+
+        # Pattern 3: Clear Trade-off on Pareto Front
+        for insight in insights:
+            if insight.type == InsightType.META and "Pareto Front" in insight.title:
+                pareto_points = [e.metric_value for e in insight.evidence if e.metric_name == 'pareto_optimal_point']
+                if len(pareto_points) > 1:
+                    alg1, alg2 = pareto_points[0], pareto_points[-1] # Simplification: compare the extremes of the front
+                    hypothesis_text = f"A fundamental trade-off exists between the architectural approaches of {alg1} and {alg2}. The former appears to prioritize efficiency, while the latter excels in performance."
+                    generated_hypotheses.append(ScientificInsight(
+                        type=InsightType.GENERATED_HYPOTHESIS,
+                        title="Generated Hypothesis: Architectural Trade-off",
+                        summary=hypothesis_text,
+                        confidence=0.75,
+                        discovery_potential=0.85,
+                        implications=[hypothesis_text],
+                        recommendations=[f"Investigate the architectural differences between {alg1} and {alg2} to understand the root cause of the performance/efficiency trade-off."]
+                    ))
+
+        return generated_hypotheses

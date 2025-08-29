@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 class InsightType(Enum):
     """Enumeration of scientific insight types."""
@@ -14,6 +14,7 @@ class InsightType(Enum):
     ADAPTABILITY = "adaptability"
     META = "meta"
     FAILURE = "failure"
+    HYPOTHESIS = "hypothesis"
 
 @dataclass
 class Evidence:
@@ -22,6 +23,8 @@ class Evidence:
     metric_value: Any
     comparison_metric_value: Optional[Any] = None
     p_value: Optional[float] = None
+    effect_size: Optional[float] = None
+    confidence_interval: Optional[Tuple[float, float]] = None
     description: Optional[str] = None
 
 @dataclass
@@ -34,6 +37,10 @@ class ScientificInsight:
     evidence: List[Evidence] = field(default_factory=list)
     title: str = ""
     summary: str = ""
+    hypothesis: Optional[str] = None
+    causal_attribution: Optional[str] = None
+    recommendations: List[str] = field(default_factory=list)
+
 
     def __post_init__(self):
         if not self.title:

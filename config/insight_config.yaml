@@ -1,0 +1,105 @@
+# Configuration for the Scientific Insight Generator
+# This file defines the thresholds and parameters used to extract insights
+# from algorithm comparison results.
+
+# Significance level for statistical tests. A p-value below this threshold is
+# considered statistically significant.
+statistical_significance_threshold: 0.05
+
+# --- Efficiency Insights ---
+# These parameters relate to insights about computational efficiency (e.g., speed).
+
+# The minimum speedup factor required to generate an efficiency insight.
+# For example, a value of 1.2 means one model must be 20% faster than another.
+efficiency_speedup_threshold: 1.2
+# A higher speedup threshold that, if crossed, provides a boost to the
+# insight's discovery potential.
+efficiency_high_speedup_threshold: 2.0
+# The boost added to discovery potential if the high speedup threshold is crossed.
+efficiency_potential_boost: 0.2
+# Base discovery potential for a "surprising" efficiency result (e.g., a more
+# complex model running faster).
+efficiency_surprising_potential: 0.8
+# Base discovery potential for an "expected" efficiency result (e.g., a simpler
+# model running faster).
+efficiency_expected_potential: 0.4
+
+
+# --- Scalability Insights ---
+# These parameters relate to how well algorithms perform as the problem difficulty increases.
+
+# The minimum performance gap (e.g., in terms of loss) required to generate
+# a scalability insight.
+scalability_performance_gap_threshold: 0.1
+# A higher performance gap threshold that provides a boost to discovery potential.
+scalability_high_performance_gap_threshold: 0.25
+# The boost added to discovery potential if the high performance gap threshold is crossed.
+scalability_potential_boost: 0.2
+# Base discovery potential for a surprising scalability result on a hard task
+# (e.g., a less complex model wins).
+scalability_surprising_potential_hard: 0.8
+# Base discovery potential for a surprising scalability result on an easy task
+# (e.g., a more complex model wins decisively).
+scalability_surprising_potential_easy: 0.7
+# Base discovery potential for an expected scalability result on a hard task
+# (e.g., a more complex model wins).
+scalability_expected_potential_hard: 0.6
+# Base discovery potential for an expected scalability result on an easy task
+# (e.g., a less complex model wins).
+scalability_expected_potential_easy: 0.4
+
+
+# --- Convergence Insights ---
+# These parameters relate to the speed and quality of model training.
+
+# The percentage of the total loss reduction that defines the convergence point.
+# For example, 0.1 means the point where 90% of the learning is done.
+convergence_threshold_percent: 0.1
+# The minimum ratio of convergence speeds to generate an insight.
+# For example, 1.5 means one model must converge 50% faster than another.
+convergence_speed_ratio_threshold: 1.5
+# Base discovery potential for a surprising convergence speed result.
+convergence_potential_surprising: 0.85
+# Base discovery potential for an expected convergence speed result.
+convergence_potential_expected: 0.5
+
+
+# --- Robustness Insights ---
+# These parameters relate to the stability of model performance across multiple runs.
+
+# The minimum ratio of variance (std dev) to generate a robustness insight.
+robustness_variance_threshold: 1.5
+# A higher variance ratio that provides a boost to discovery potential.
+robustness_high_variance_threshold: 3.0
+# The boost added to discovery potential if the high variance threshold is crossed.
+robustness_potential_boost: 0.25
+# Base discovery potential for a robustness insight where HREM is more robust.
+robustness_hrem_potential: 0.7
+# Base discovery potential for a robustness insight where HRM is more robust.
+robustness_hrm_potential: 0.6
+
+
+# --- Generalization Insights ---
+# These parameters relate to performance on out-of-distribution data.
+
+# The minimum performance drop-off on generalization data to generate an insight.
+generalization_drop_off_threshold: 0.2
+# Base discovery potential for a generalization insight.
+generalization_potential: 0.7
+
+
+# --- Adaptability Insights ---
+# These parameters relate to performance improvement from fine-tuning.
+
+# The minimum improvement from fine-tuning to generate an adaptability insight.
+adaptability_improvement_threshold: 0.1
+# Base discovery potential for an adaptability insight.
+adaptability_potential: 0.75
+
+
+# --- Meta Insights ---
+# These parameters relate to higher-level insights synthesized from other insights.
+
+# The minimum number of "wins" for an algorithm to generate a meta-insight
+# about its dominance.
+meta_insight_threshold: 3

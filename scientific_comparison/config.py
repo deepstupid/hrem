@@ -12,6 +12,14 @@ class ChallengeLevel(Enum):
     ADVANCED = "ADVANCED"
 
 @dataclass
+class Hypothesis:
+    """A structured scientific hypothesis."""
+    description: str
+    metric: Literal["efficiency", "scalability", "robustness", "convergence"]
+    expected_winner: str
+    expected_loser: str
+
+@dataclass
 class ChallengeConfig:
     """Configuration for a scientific challenge."""
     name: str                    # Descriptive challenge name
@@ -20,7 +28,7 @@ class ChallengeConfig:
     dataset: DataConfig          # Challenge dataset
     difficulty: ChallengeLevel   # Complexity indicator
     scientific_question: str     # Core research question
-    hypothesis_space: List[str]  # Expected algorithm behaviors
+    hypothesis_space: List[Hypothesis]  # Expected algorithm behaviors
 
 @dataclass
 class AlgorithmConfig:

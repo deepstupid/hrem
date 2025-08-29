@@ -30,6 +30,7 @@ class AlgorithmConfig:
     theoretical_advantages: List[str]  # Expected strengths
     theoretical_limitations: List[str] # Known weaknesses
     search_space: Dict[str, Any] # Optimization parameters
+    complexity: float = 1.0      # Algorithm complexity score
     complexity_profile: Optional[Dict[str, Any]] = None  # Resource requirements
 
 @dataclass

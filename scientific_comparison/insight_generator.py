@@ -4,7 +4,7 @@ import math
 import numpy as np
 from typing import List, Dict, Any, Tuple
 from scipy import stats
-from .config import ChallengeConfig
+from .config import ChallengeConfig, ChallengeLevel
 from .patience_manager import ScientificInsight
 
 class InsightType:
@@ -15,13 +15,60 @@ class InsightType:
     GENERALIZATION = "generalization"
     CONVERGENCE = "convergence"
     ADAPTABILITY = "adaptability"
+    META = "meta"
+
+class InsightConstants:
+    """Constants and thresholds for insight generation."""
+    # Efficiency Insights
+    EFFICIENCY_SPEEDUP_THRESHOLD = 1.2
+    EFFICIENCY_HIGH_SPEEDUP_THRESHOLD = 2.0
+    EFFICIENCY_POTENTIAL_BOOST = 0.2
+    EFFICIENCY_SURPRISING_POTENTIAL = 0.8
+    EFFICIENCY_EXPECTED_POTENTIAL = 0.4
+
+    # Scalability Insights
+    SCALABILITY_PERFORMANCE_GAP_THRESHOLD = 0.1
+    SCALABILITY_HIGH_PERFORMANCE_GAP_THRESHOLD = 0.25
+    SCALABILITY_POTENTIAL_BOOST = 0.2
+    SCALABILITY_SURPRISING_POTENTIAL_HARD = 0.8
+    SCALABILITY_SURPRISING_POTENTIAL_EASY = 0.7
+    SCALABILITY_EXPECTED_POTENTIAL_HARD = 0.6
+    SCALABILITY_EXPECTED_POTENTIAL_EASY = 0.4
+
+    # Convergence Insights
+    CONVERGENCE_THRESHOLD_PERCENT = 0.1
+    CONVERGENCE_SPEED_RATIO_THRESHOLD = 1.5
+    CONVERGENCE_POTENTIAL_SURPRISING = 0.85
+    CONVERGENCE_POTENTIAL_EXPECTED = 0.5
+
+    # Robustness Insights
+    ROBUSTNESS_VARIANCE_THRESHOLD = 1.5
+    ROBUSTNESS_HIGH_VARIANCE_THRESHOLD = 3.0
+    ROBUSTNESS_POTENTIAL_BOOST = 0.25
+    ROBUSTNESS_HREM_POTENTIAL = 0.7
+    ROBUSTNESS_HRM_POTENTIAL = 0.6
+
+    # Generalization Insights
+    GENERALIZATION_DROP_OFF_THRESHOLD = 0.2
+    GENERALIZATION_POTENTIAL = 0.7
+
+    # Adaptability Insights
+    ADAPTABILITY_IMPROVEMENT_THRESHOLD = 0.1
+    ADAPTABILITY_POTENTIAL = 0.75
+
+    # Meta Insights
+    META_INSIGHT_THRESHOLD = 3
+
+from .config import AlgorithmConfig
 
 class ScientificInsightGenerator:
     """Extracts meaningful scientific insights from algorithm comparisons."""
     
-    def __init__(self, challenge: ChallengeConfig):
-        """Initialize with challenge context."""
+    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], constants: InsightConstants = InsightConstants()):
+        """Initialize with challenge context and constants."""
         self.challenge = challenge
+        self.algorithms = {alg.name: alg for alg in algorithms}
+        self.constants = constants
         
     def extract_insights(self, comparison_results: Dict[str, Any]) -> List[ScientificInsight]:
         """
@@ -36,23 +83,73 @@ class ScientificInsightGenerator:
         insights = []
         
         # Extract efficiency insights
-        efficiency_insights = self._extract_efficiency_insights(comparison_results)
-        insights.extend(efficiency_insights)
+        insights.extend(self._extract_efficiency_insights(comparison_results))
         
         # Extract scalability insights
-        scalability_insights = self._extract_scalability_insights(comparison_results)
-        insights.extend(scalability_insights)
+        insights.extend(self._extract_scalability_insights(comparison_results))
         
         # Extract convergence insights
-        convergence_insights = self._extract_convergence_insights(comparison_results)
-        insights.extend(convergence_insights)
+        insights.extend(self._extract_convergence_insights(comparison_results))
         
         # Extract robustness insights
-        robustness_insights = self._extract_robustness_insights(comparison_results)
-        insights.extend(robustness_insights)
+        insights.extend(self._extract_robustness_insights(comparison_results))
+
+        # Extract generalization insights
+        insights.extend(self._extract_generalization_insights(comparison_results))
+
+        # Extract adaptability insights
+        insights.extend(self._extract_adaptability_insights(comparison_results))
+
+        # Synthesize meta-insights from the collected individual insights
+        insights.extend(self._synthesize_meta_insights(insights))
         
         return insights
     
+    def _synthesize_meta_insights(self, insights: List[ScientificInsight]) -> List[ScientificInsight]:
+        """Synthesize meta-insights from a list of individual insights."""
+        meta_insights = []
+        winner_counts = {}
+
+        for insight in insights:
+            if insight.type == InsightType.EFFICIENCY:
+                winner = insight.evidence[0].get('faster_algorithm')
+                if winner: winner_counts[winner] = winner_counts.get(winner, 0) + 1
+            elif insight.type == InsightType.SCALABILITY:
+                winner = insight.evidence[0].get('winning_algorithm')
+                if winner: winner_counts[winner] = winner_counts.get(winner, 0) + 1
+            elif insight.type == InsightType.ROBUSTNESS:
+                winner = insight.evidence[0].get('most_robust_algorithm')
+                if winner: winner_counts[winner] = winner_counts.get(winner, 0) + 1
+            elif insight.type == InsightType.CONVERGENCE:
+                winner = insight.evidence[0].get('best_algorithm')
+                if winner: winner_counts[winner] = winner_counts.get(winner, 0) + 1
+                winner = insight.evidence[0].get('faster_converging_algorithm')
+                if winner: winner_counts[winner] = winner_counts.get(winner, 0) + 1
+
+        for alg, count in winner_counts.items():
+            if count >= self.constants.META_INSIGHT_THRESHOLD:
+                meta_insights.append(ScientificInsight(
+                    type=InsightType.META,
+                    confidence=0.9, # High confidence as it's based on multiple sources of evidence
+                    evidence=[{
+                        'algorithm': alg,
+                        'number_of_wins': count,
+                        'winning_categories': [
+                            i.type for i in insights if i.evidence[0].get('faster_algorithm') == alg or
+                                                     i.evidence[0].get('winning_algorithm') == alg or
+                                                     i.evidence[0].get('most_robust_algorithm') == alg or
+                                                     i.evidence[0].get('best_algorithm') == alg or
+                                                     i.evidence[0].get('faster_converging_algorithm') == alg
+                        ]
+                    }],
+                    implications=[
+                        f"{alg} demonstrates superior performance across multiple dimensions ({count} categories).",
+                        f"This suggests {alg} is a dominant architecture for the '{self.challenge.name}' challenge."
+                    ],
+                    discovery_potential=0.95 # Very high discovery potential
+                ))
+        return meta_insights
+
     def _extract_efficiency_insights(self, comparison_results: Dict[str, Any]) -> List[ScientificInsight]:
         """Extract efficiency-related insights."""
         insights = []
@@ -81,28 +178,29 @@ class ScientificInsightGenerator:
 
             speedup = times[slower_idx] / times[faster_idx]
             
-            if speedup > 1.2:  # At least 20% faster
+            if speedup > self.constants.EFFICIENCY_SPEEDUP_THRESHOLD:
                 faster_model_name = alg_names[faster_idx]
                 
                 # Base discovery potential on surprise
-                if 'HREM' in faster_model_name:
-                    # Surprising result: complex model is faster
-                    discovery_potential = 0.8
-                    implication_text = f"{faster_model_name} is surprisingly more efficient than {alg_names[slower_idx]}."
+                faster_alg_config = self.algorithms.get(faster_model_name)
+                slower_alg_config = self.algorithms.get(alg_names[slower_idx])
+
+                if faster_alg_config and slower_alg_config and faster_alg_config.complexity > slower_alg_config.complexity:
+                    # Surprising result: more complex model is faster
+                    base_potential = self.constants.EFFICIENCY_SURPRISING_POTENTIAL
+                    implication_text = f"{faster_model_name} is surprisingly more computationally efficient than {alg_names[slower_idx]} despite its higher complexity."
                 else:
                     # Expected result: simpler model is faster
-                    discovery_potential = 0.4
-                    implication_text = f"{faster_model_name} is more efficient than {alg_names[slower_idx]}, as expected for a simpler model."
+                    base_potential = self.constants.EFFICIENCY_EXPECTED_POTENTIAL
+                    implication_text = f"{faster_model_name} is more computationally efficient than {alg_names[slower_idx]}, as expected for a simpler model."
 
                 # Boost potential based on magnitude of speedup
-                if speedup > 2.0: # More than 2x faster
-                    discovery_potential = min(1.0, discovery_potential + 0.2)
-
-                confidence = 0.9 # High confidence as it's based on direct timing metrics
+                boost_factor = self.constants.EFFICIENCY_POTENTIAL_BOOST if speedup > self.constants.EFFICIENCY_HIGH_SPEEDUP_THRESHOLD else 0.0
+                discovery_potential = self.classify_discovery_potential(base_potential, boost_factor)
 
                 insights.append(ScientificInsight(
                     type=InsightType.EFFICIENCY,
-                    confidence=confidence,
+                    confidence=0.9, # Placeholder
                     evidence=[{
                         'faster_algorithm': faster_model_name,
                         'slower_algorithm': alg_names[slower_idx],
@@ -110,7 +208,7 @@ class ScientificInsightGenerator:
                     }],
                     implications=[
                         implication_text,
-                        "This efficiency difference could be critical for deployment in resource-constrained environments."
+                        f"This {speedup:.2f}x speedup could be critical for deployment in resource-constrained environments."
                     ],
                     discovery_potential=discovery_potential
                 ))
@@ -133,69 +231,63 @@ class ScientificInsightGenerator:
         alg_names = list(performance_data.keys())
         losses = list(performance_data.values())
 
-        # Find HREM and HRM in the results
-        hrem_idx = -1
-        hrm_idx = -1
-        for i, name in enumerate(alg_names):
-            if 'HREM' in name:
-                hrem_idx = i
-            if 'HRM' in name:
-                hrm_idx = i
-
-        if hrem_idx == -1 or hrm_idx == -1:
+        # This method assumes a comparison between two algorithms.
+        # For a more general implementation, this logic would need to be extended.
+        if len(alg_names) != 2:
             return insights
 
-        hrem_loss = losses[hrem_idx]
-        hrm_loss = losses[hrm_idx]
+        alg1_name, alg2_name = alg_names[0], alg_names[1]
+        alg1_loss, alg2_loss = losses[0], losses[1]
 
-        # Determine which model performed better (lower loss is better)
-        if hrem_loss < hrm_loss:
-            winner = alg_names[hrem_idx]
-            loser = alg_names[hrm_idx]
-            performance_gap = (hrm_loss - hrem_loss) / hrm_loss if hrm_loss > 0 else 0
-            implication = f"{winner} outperforms {loser} on this task, suggesting better scalability with task complexity."
+        # Determine winner and loser
+        if alg1_loss < alg2_loss:
+            winner, loser = alg1_name, alg2_name
+            performance_gap = (alg2_loss - alg1_loss) / alg2_loss if alg2_loss > 0 else 0
         else:
-            winner = alg_names[hrm_idx]
-            loser = alg_names[hrem_idx]
-            performance_gap = (hrem_loss - hrm_loss) / hrem_loss if hrem_loss > 0 else 0
-            implication = f"{winner} outperforms {loser}, suggesting it's more efficient for this level of task complexity."
+            winner, loser = alg2_name, alg1_name
+            performance_gap = (alg1_loss - alg2_loss) / alg1_loss if alg1_loss > 0 else 0
+
+        implication = f"{winner} outperforms {loser} on the '{self.challenge.name}' challenge, suggesting better scalability with task complexity."
 
         # Determine discovery potential based on surprise
-        task_difficulty_str = str(self.challenge.difficulty).split('.')[-1].upper()
-        discovery_potential = 0.5  # Default
+        base_potential = 0.5  # Default
+        winner_config = self.algorithms.get(winner)
+        loser_config = self.algorithms.get(loser)
 
-        is_hrem_winner = 'HREM' in winner
+        if winner_config and loser_config:
+            is_winner_less_complex = winner_config.complexity < loser_config.complexity
+            is_hard_task = self.challenge.difficulty in [ChallengeLevel.ADVANCED, ChallengeLevel.INTERMEDIATE]
 
-        # Surprising if simpler model (HRM) wins on a hard task
-        if not is_hrem_winner and task_difficulty_str in ["ADVANCED", "INTERMEDIATE"]:
-            discovery_potential = 0.8
-        # Surprising if complex model (HREM) wins decisively on an easy task
-        elif is_hrem_winner and task_difficulty_str == "BEGINNER" and performance_gap > 0.1:
-            discovery_potential = 0.7
-        # Expected for HREM to win on complex tasks
-        elif is_hrem_winner and task_difficulty_str in ["ADVANCED", "INTERMEDIATE"]:
-            discovery_potential = 0.6
-        # Expected for HRM to win on simple tasks
-        elif not is_hrem_winner and task_difficulty_str == "BEGINNER":
-            discovery_potential = 0.4
+            # Surprising if a less complex model wins on a hard task
+            if is_winner_less_complex and is_hard_task:
+                base_potential = self.constants.SCALABILITY_SURPRISING_POTENTIAL_HARD
+            # Surprising if a more complex model wins decisively on an easy task
+            elif not is_winner_less_complex and not is_hard_task and performance_gap > self.constants.SCALABILITY_PERFORMANCE_GAP_THRESHOLD:
+                base_potential = self.constants.SCALABILITY_SURPRISING_POTENTIAL_EASY
+            # Expected for more complex model to win on hard tasks
+            elif not is_winner_less_complex and is_hard_task:
+                base_potential = self.constants.SCALABILITY_EXPECTED_POTENTIAL_HARD
+            # Expected for less complex model to win on easy tasks
+            elif is_winner_less_complex and not is_hard_task:
+                base_potential = self.constants.SCALABILITY_EXPECTED_POTENTIAL_EASY
 
         # Boost potential if the performance gap is large
-        if performance_gap > 0.25:
-            discovery_potential = min(1.0, discovery_potential + 0.2)
+        boost_factor = self.constants.SCALABILITY_POTENTIAL_BOOST if performance_gap > self.constants.SCALABILITY_HIGH_PERFORMANCE_GAP_THRESHOLD else 0.0
+        discovery_potential = self.classify_discovery_potential(base_potential, boost_factor)
 
         insights.append(ScientificInsight(
             type=InsightType.SCALABILITY,
-            confidence=0.85,  # High confidence as it's based on direct metrics
+            confidence=0.85, # Placeholder
             evidence=[{
                 'winning_algorithm': winner,
                 'losing_algorithm': loser,
                 'performance_metric': 'final_loss',
                 'performance_gap': f"{performance_gap:.2%}",
-                'task_difficulty': task_difficulty_str
+                'task_difficulty': self.challenge.difficulty.name
             }],
             implications=[
                 implication,
-                "The choice of model architecture is critical for performance on tasks of this nature."
+                f"For tasks similar to '{self.challenge.name}', {winner} is the recommended architecture due to its superior performance."
             ],
             discovery_potential=discovery_potential
         ))
@@ -222,17 +314,17 @@ class ScientificInsightGenerator:
             best_alg = min(final_losses, key=final_losses.get)
             insights.append(ScientificInsight(
                 type=InsightType.CONVERGENCE,
-                confidence=0.75,
+                confidence=0.75, # Placeholder
                 evidence=[{
                     'best_algorithm': best_alg,
                     'final_loss': final_losses[best_alg],
                     'comparison': final_losses
                 }],
                 implications=[
-                    f"{best_alg} achieves a lower final loss, indicating better overall performance.",
-                    "The model's architecture directly impacts its ability to minimize the objective function."
+                    f"{best_alg} achieves a lower final loss, indicating a more optimal convergence on the given task.",
+                    "This suggests its architecture is better suited to navigating the specific loss landscape of this problem."
                 ],
-                discovery_potential=0.6
+                discovery_potential=0.6 # Placeholder
             ))
 
         # --- Insight 2: Convergence Speed Analysis ---
@@ -242,7 +334,7 @@ class ScientificInsightGenerator:
                 initial_loss = loss_history[0]
                 final_loss = loss_history[-1]
                 # Threshold: point at which 90% of the learning is done
-                threshold = final_loss + 0.1 * (initial_loss - final_loss)
+                threshold = final_loss + self.constants.CONVERGENCE_THRESHOLD_PERCENT * (initial_loss - final_loss)
 
                 steps_to_converge = next((i for i, loss in enumerate(loss_history) if loss <= threshold), len(loss_history))
                 convergence_speed[alg_name] = steps_to_converge
@@ -257,18 +349,23 @@ class ScientificInsightGenerator:
                 else:
                     speed_ratio = convergence_speed[slower_alg] / convergence_speed[faster_alg]
 
-                if speed_ratio > 1.5:  # At least 50% faster to converge
+                if speed_ratio > self.constants.CONVERGENCE_SPEED_RATIO_THRESHOLD:
                     # Base discovery potential on surprise
-                    if 'HREM' in faster_alg:
-                        # Surprising: complex model converges faster
-                        discovery_potential = 0.85
+                    faster_alg_config = self.algorithms.get(faster_alg)
+                    slower_alg_config = self.algorithms.get(slower_alg)
+
+                    if faster_alg_config and slower_alg_config and faster_alg_config.complexity > slower_alg_config.complexity:
+                        # Surprising: more complex model converges faster
+                        base_potential = self.constants.CONVERGENCE_POTENTIAL_SURPRISING
                     else:
                         # Expected: simpler model converges faster
-                        discovery_potential = 0.5
+                        base_potential = self.constants.CONVERGENCE_POTENTIAL_EXPECTED
+
+                    discovery_potential = self.classify_discovery_potential(base_potential)
 
                     insights.append(ScientificInsight(
                         type=InsightType.CONVERGENCE,
-                        confidence=0.8,
+                        confidence=0.8, # Placeholder
                         evidence=[{
                             'faster_converging_algorithm': faster_alg,
                             'slower_converging_algorithm': slower_alg,
@@ -276,8 +373,8 @@ class ScientificInsightGenerator:
                             'metric': 'steps_to_reach_90%_of_learning'
                         }],
                         implications=[
-                            f"{faster_alg} converges significantly faster than {slower_alg}.",
-                            "Faster convergence can lead to reduced training time and costs."
+                            f"{faster_alg} converges {speed_ratio:.2f}x faster than {slower_alg}, which can significantly reduce training time and cost.",
+                            "This rapid convergence suggests a more efficient learning process, enabling faster iteration during model development."
                         ],
                         discovery_potential=discovery_potential
                     ))
@@ -305,19 +402,31 @@ class ScientificInsightGenerator:
         least_robust_alg = max(stdevs, key=stdevs.get)
 
         # Generate insight if the difference in robustness is significant
-        if stdevs[least_robust_alg] > stdevs[most_robust_alg] * 1.5:  # 50% more variance
+        if stdevs[least_robust_alg] > stdevs[most_robust_alg] * self.constants.ROBUSTNESS_VARIANCE_THRESHOLD:
 
-            if 'HREM' in most_robust_alg:
-                discovery_potential = 0.7
+            most_robust_config = self.algorithms.get(most_robust_alg)
+            least_robust_config = self.algorithms.get(least_robust_alg)
+
+            if most_robust_config and least_robust_config and most_robust_config.complexity > least_robust_config.complexity:
+                # Surprising: more complex model is more robust
+                base_potential = self.constants.ROBUSTNESS_HREM_POTENTIAL # Re-using HREM potential for "surprising"
             else:
-                discovery_potential = 0.6
+                # Expected: simpler model is more robust
+                base_potential = self.constants.ROBUSTNESS_HRM_POTENTIAL # Re-using HRM potential for "expected"
 
-            if stdevs[least_robust_alg] > stdevs[most_robust_alg] * 3:
-                discovery_potential = min(1.0, discovery_potential + 0.25)
+            boost_factor = self.constants.ROBUSTNESS_POTENTIAL_BOOST if stdevs[least_robust_alg] > stdevs[most_robust_alg] * self.constants.ROBUSTNESS_HIGH_VARIANCE_THRESHOLD else 0.0
+            discovery_potential = self.classify_discovery_potential(base_potential, boost_factor)
+
+            # Calculate statistical significance
+            p_value = self.calculate_statistical_significance(
+                robustness_data[most_robust_alg],
+                robustness_data[least_robust_alg]
+            )
+            confidence = 1.0 - p_value
 
             insights.append(ScientificInsight(
                 type=InsightType.ROBUSTNESS,
-                confidence=0.8,
+                confidence=confidence,
                 evidence=[{
                     'most_robust_algorithm': most_robust_alg,
                     'least_robust_algorithm': least_robust_alg,
@@ -325,8 +434,8 @@ class ScientificInsightGenerator:
                     'comparison': {k: round(v, 4) for k, v in stdevs.items()}
                 }],
                 implications=[
-                    f"{most_robust_alg} shows higher robustness (lower performance variance) than {least_robust_alg}.",
-                    "High robustness is crucial for reliable performance in real-world applications."
+                    f"{most_robust_alg} demonstrates statistically significant higher robustness (lower performance variance) than {least_robust_alg}.",
+                    "This reliability is crucial for deployment in production environments where predictable performance is key."
                 ],
                 discovery_potential=discovery_potential
             ))
@@ -345,24 +454,81 @@ class ScientificInsightGenerator:
         Returns:
             p-value from a t-test
         """
+        if len(data1) < 2 or len(data2) < 2:
+            return 1.0
         try:
             # Perform t-test
-            _, p_value = stats.ttest_ind(data1, data2)
+            _, p_value = stats.ttest_ind(data1, data2, equal_var=False) # Welch's t-test
             return p_value
         except:
             # If statistical test fails, return a non-significant p-value
             return 1.0
     
-    def classify_discovery_potential(self, insight: ScientificInsight) -> float:
+    def classify_discovery_potential(self, base_potential: float, boost_factor: float = 0.0) -> float:
         """
         Classify the potential of an insight for future research.
         
         Args:
-            insight: ScientificInsight to classify
+            base_potential: The base discovery potential.
+            boost_factor: A factor to boost the potential.
             
         Returns:
             Discovery potential score (0.0-1.0)
         """
         # This is a simplified classification
         # In practice, this would be more sophisticated
-        return insight.discovery_potential
+        return min(1.0, base_potential + boost_factor)
+
+    def _extract_generalization_insights(self, comparison_results: Dict[str, Any]) -> List[ScientificInsight]:
+        """Extract generalization-related insights."""
+        insights = []
+        for alg_name, results in comparison_results.items():
+            if 'all/lm_loss' in results and 'generalization_loss' in results:
+                train_loss = results['all/lm_loss']
+                gen_loss = results['generalization_loss']
+
+                if train_loss > 0 and gen_loss > (train_loss * (1 + self.constants.GENERALIZATION_DROP_OFF_THRESHOLD)):
+                    insights.append(ScientificInsight(
+                        type=InsightType.GENERALIZATION,
+                        confidence=0.8, # Placeholder
+                        evidence=[{
+                            'algorithm': alg_name,
+                            'training_loss': train_loss,
+                            'generalization_loss': gen_loss,
+                            'drop_off_percentage': (gen_loss - train_loss) / train_loss
+                        }],
+                        implications=[
+                            f"{alg_name} shows a {((gen_loss - train_loss) / train_loss):.2%} performance drop on out-of-distribution data, suggesting overfitting.",
+                            "Investigating regularization techniques (e.g., dropout, weight decay) is recommended to improve this model's generalization."
+                        ],
+                        discovery_potential=self.constants.GENERALIZATION_POTENTIAL
+                    ))
+        return insights
+
+    def _extract_adaptability_insights(self, comparison_results: Dict[str, Any]) -> List[ScientificInsight]:
+        """Extract adaptability-related insights from fine-tuning performance."""
+        insights = []
+        for alg_name, results in comparison_results.items():
+            if 'pre_finetune_loss' in results and 'post_finetune_loss' in results:
+                pre_loss = results['pre_finetune_loss']
+                post_loss = results['post_finetune_loss']
+
+                improvement = (pre_loss - post_loss) / pre_loss if pre_loss > 0 else 0
+
+                if improvement > self.constants.ADAPTABILITY_IMPROVEMENT_THRESHOLD:
+                    insights.append(ScientificInsight(
+                        type=InsightType.ADAPTABILITY,
+                        confidence=0.85, # Placeholder
+                        evidence=[{
+                            'algorithm': alg_name,
+                            'pre_finetune_loss': pre_loss,
+                            'post_finetune_loss': post_loss,
+                            'improvement_percentage': improvement
+                        }],
+                        implications=[
+                            f"{alg_name} demonstrates strong adaptability, improving its performance by {improvement:.2%} with minimal fine-tuning.",
+                            "This suggests the model learns transferable representations and can be effectively repurposed for new, related tasks."
+                        ],
+                        discovery_potential=self.constants.ADAPTABILITY_POTENTIAL
+                    ))
+        return insights

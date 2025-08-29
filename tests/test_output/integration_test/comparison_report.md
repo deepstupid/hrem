@@ -2,8 +2,8 @@
 
 ## Executive Summary
 
-| Model | Accuracy | Loss | Steps | Parameters |
-|---|---|---|---|---|
+| Model | Accuracy | Steps | Parameters |
+|---|---|---|---|
 
 ## Detailed Metrics Comparison
 | Metric |  |

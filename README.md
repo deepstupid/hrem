@@ -1,32 +1,40 @@
-# Hierarchical Reasoning and Memory (HRM)
-
-![](./assets/hrm.png)
+# Real-Time Scientific Algorithm Comparison Engine
 
 ## Overview
 
-This repository contains the PyTorch implementation for a family of models focused on complex reasoning tasks. These models execute sequential reasoning in a single forward pass without explicit supervision of the intermediate steps.
+This repository contains the implementation of a scientifically-rigorous framework for real-time comparison of algorithms (e.g., HRM vs HREM). The system balances computational exploration with user patience constraints to maximize the potential for scientific discovery within practical time limits.
 
-The primary models are:
+The primary models compared are:
 - **HRM (Hierarchical Reasoning Model)**: A recurrent architecture with two interdependent modules: a high-level module for abstract planning and a low-level module for detailed computations.
 - **HREM (Hierarchical Recurrent Execution Model)**: An extension of HRM with a multi-layer memory architecture and sparse memory addressing for more efficient information retrieval.
+
+The core of the repository is the **Scientific Discovery Engine**, a flexible and extensible system for running, comparing, and analyzing complex machine learning models.
 
 ## Quick Start
 
 This project provides a unified command-line interface (CLI) through `run.py` for all major functionalities.
 
-### Evaluation
+### Scientific Comparison
 
-To run a side-by-side comparison of specified models:
+To run a side-by-side comparison of specified models for a given scientific challenge:
 ```bash
-# Compare HRM and HREM on the synthetic dataset
-python run.py evaluate --dataset synthetic --models HRM HREM
+# Compare HRM and HREM on the synthetic sorting challenge
+python run.py compare --challenge synthetic_sort
 ```
 
 ### Hyperparameter Optimization
 
-To run hyperparameter optimization for a model using [Optuna](https://optuna.org/):
+To run hyperparameter optimization for a model:
 ```bash
-python run.py optimize --dataset arc --model HREM --n-trials 50
+# Optimize HREM on the synthetic sorting challenge for 50 trials
+python run.py optimize --challenge synthetic_sort --model-to-optimize HREM --n-trials 50
+```
+
+### Scripted Demo
+
+For a non-interactive, scripted demonstration of a full workflow (baseline evaluation, optimization, and final comparison):
+```bash
+python run.py demo --challenge synthetic_sort
 ```
 
 ### Interactive TUI
@@ -37,29 +45,13 @@ python run.py tui
 ```
 The TUI allows you to manage datasets, run evaluations, and visualize results.
 
-### Scripted Demo
+## Core Philosophy
 
-For a non-interactive, scripted demonstration of a full workflow (baseline evaluation, optimization, and final comparison):
-```bash
-python run.py demo
-```
-
-## Models
-
-### HRM (Hierarchical Reasoning Model)
-HRM is a recurrent architecture with two interdependent modules: a high-level module for abstract planning and a low-level module for detailed computations.
-
-### HREM (Hierarchical Recurrent Execution Model)
-HREM is an extension of HRM with a multi-layer memory architecture and sparse memory addressing for more efficient information retrieval.
-
-## Optimization and Evaluation Framework
-
-The repository includes a comprehensive framework for model evaluation and hyperparameter tuning.
-
-- **Unified Interface**: All modes (evaluation, optimization, demo, TUI) are accessible through `run.py`.
-- **Hyperparameter Tuning**: Utilizes Optuna for efficient hyperparameter searches.
-- **Detailed Reporting**: Generates Markdown reports with detailed metrics and comparisons.
-- **Scientific Analysis**: Provides statistical significance testing (t-tests) to compare model performance.
+Scientific discovery in algorithm comparison requires:
+1. **Challenge-Driven Focus**: Each comparison centers around a specific scientific problem.
+2. **Algorithm-First Design**: Algorithms define the exploration methodology.
+3. **Adaptive Exploration**: Resource allocation responds dynamically to performance signals.
+4. **Discovery Maximization**: Optimizing for insight generation rather than just performance metrics.
 
 ## Prerequisites
 

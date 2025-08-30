@@ -1,10 +1,10 @@
 import unittest
 from unittest.mock import MagicMock
 import torch
-from hrm_system.algorithms.hrem import HREMAlgorithm
-from hrm_system.config import TrainingConfig, ModelConfig, HREMParams
+from sc_engine.plugins.algorithms.hrem import HREMAlgorithm
 from sc_engine.core.insight_generator import ScientificInsightGenerator
 import itertools
+import yaml
 
 class RefactoringTests(unittest.TestCase):
 
@@ -20,21 +20,29 @@ class RefactoringTests(unittest.TestCase):
         train_metadata.total_groups = 1
         train_metadata.mean_puzzle_examples = 1
 
-        # Test with AdamW
-        training_config_adamw = TrainingConfig(optimizer="AdamW", optimizer_eps=1e-5)
-        model_config = ModelConfig(base_arch_config="hrem_v1", hrem_params=HREMParams())
+        # Load base architecture config
+        with open("config/arch/hrem_v1.yaml", 'r') as f:
+            base_arch_config = yaml.safe_load(f)
 
-        hrem_algo_adamw = HREMAlgorithm(model_config, training_config_adamw)
-        hrem_algo_adamw._init_train_state(train_metadata, world_size=1, rank=0)
+        # Test with AdamW
+        training_config_adamw = {"optimizer": "AdamW", "optimizer_eps": 1e-5, "puzzle_emb_weight_decay": 1.0, "weight_decay": 1.0, "beta1": 0.9, "beta2": 0.95, "puzzle_emb_lr": 1e-4, "lr": 1e-4, "epochs": 1, "global_batch_size": 32}
+        model_config_adamw = base_arch_config.copy()
+        model_config_adamw['algorithm_class'] = "sc_engine.plugins.algorithms.hrem.HREMAlgorithm"
+
+
+        hrem_algo_adamw = HREMAlgorithm(model_config_adamw, training_config_adamw)
+        hrem_algo_adamw.initialize_train_state(train_metadata, world_size=1, rank=0)
 
         self.assertIsInstance(hrem_algo_adamw.train_state.optimizers[1], torch.optim.AdamW)
         self.assertEqual(hrem_algo_adamw.train_state.optimizers[1].defaults['eps'], 1e-5)
 
         # Test with Adam
-        training_config_adam = TrainingConfig(optimizer="Adam", optimizer_eps=1e-8)
+        training_config_adam = {"optimizer": "Adam", "optimizer_eps": 1e-8, "puzzle_emb_weight_decay": 1.0, "weight_decay": 1.0, "beta1": 0.9, "beta2": 0.95, "puzzle_emb_lr": 1e-4, "lr": 1e-4, "epochs": 1, "global_batch_size": 32}
+        model_config_adam = base_arch_config.copy()
+        model_config_adam['algorithm_class'] = "sc_engine.plugins.algorithms.hrem.HREMAlgorithm"
 
-        hrem_algo_adam = HREMAlgorithm(model_config, training_config_adam)
-        hrem_algo_adam._init_train_state(train_metadata, world_size=1, rank=0)
+        hrem_algo_adam = HREMAlgorithm(model_config_adam, training_config_adam)
+        hrem_algo_adam.initialize_train_state(train_metadata, world_size=1, rank=0)
 
         self.assertIsInstance(hrem_algo_adam.train_state.optimizers[1], torch.optim.Adam)
         self.assertEqual(hrem_algo_adam.train_state.optimizers[1].defaults['eps'], 1e-8)
@@ -75,11 +83,19 @@ class RefactoringTests(unittest.TestCase):
         model_names = list(raw_results.keys())
         p_values = {name: {} for name in model_names}
 
+        # This part is a bit of a hack. The ScientificInsightGenerator is not a static class.
+        # I will instantiate it with dummy data.
+        from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, ChallengeLevel
+        challenge_config = ChallengeConfig(name="test", id="test", description="test", dataset={}, difficulty=ChallengeLevel.BEGINNER)
+        algo_configs = [AlgorithmConfig(name=name, algorithm_class="", config={}, theoretical_advantages=[], theoretical_limitations=[], search_space={}) for name in model_names]
+        insight_generator = ScientificInsightGenerator(challenge_config, algo_configs)
+
+
         for model1, model2 in itertools.combinations(model_names, 2):
             data1 = get_metric_data(raw_results, model1, metric)
             data2 = get_metric_data(raw_results, model2, metric)
 
-            p_value = ScientificInsightGenerator.calculate_statistical_significance(data1, data2)
+            p_value = insight_generator.calculate_statistical_significance(data1, data2)
             p_values[model1][model2] = p_value
             p_values[model2][model1] = p_value
 

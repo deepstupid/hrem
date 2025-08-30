@@ -3,7 +3,6 @@
 from typing import Dict, Any, List, Optional, Literal
 from enum import Enum
 from dataclasses import dataclass
-from hrm_system.config import DataConfig, TrainingConfig, ModelConfig
 
 class ChallengeLevel(Enum):
     """Enumeration of challenge difficulty levels."""
@@ -25,16 +24,17 @@ class ChallengeConfig:
     name: str                    # Descriptive challenge name
     id: str                      # Unique identifier
     description: str             # Scientific context
-    dataset: DataConfig          # Challenge dataset
-    difficulty: ChallengeLevel   # Complexity indicator
-    scientific_question: str     # Core research question
-    hypothesis_space: List[Hypothesis]  # Expected algorithm behaviors
+    dataset: dict                # Challenge dataset as a dictionary
+    difficulty: ChallengeLevel = ChallengeLevel.INTERMEDIATE # Complexity indicator
+    scientific_question: str = ""     # Core research question
+    hypothesis_space: List[Hypothesis] = None  # Expected algorithm behaviors
 
 @dataclass
 class AlgorithmConfig:
     """Configuration for an algorithm to be compared."""
     name: str                    # Algorithm name
     algorithm_class: str         # Implementation class
+    config: dict                 # The raw config dictionary for the algorithm
     theoretical_advantages: List[str]  # Expected strengths
     theoretical_limitations: List[str] # Known weaknesses
     search_space: Dict[str, Any] # Optimization parameters

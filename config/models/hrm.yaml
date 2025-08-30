@@ -1,4 +1,10 @@
 name: HRM
-algorithm_class: hrm_system.algorithms.hrm.HRMAlgorithm
+algorithm_class: sc_engine.plugins.algorithms.hrm.HRMAlgorithm
 base_arch_config: hrm_v1
 search_space_config: hrm_search_space
+theoretical_advantages:
+  - "computational_efficiency"
+  - "simplicity_of_architecture"
+theoretical_limitations:
+  - "limited_memory_capacity"
+  - "difficulty_with_long_range_dependencies"

@@ -3,9 +3,6 @@ import os
 from typing import Dict, Any, List
 from .config import ChallengeConfig, AlgorithmConfig, PatienceBudget
 from .engine import ScientificDiscoveryEngine, DiscoveryResults
-from hrm_system.runner import run_single_model
-from hrm_system.optimization import run_optimization
-from hrm_system.config import RunConfig, DataConfig, ModelConfig, TrainingConfig, ExperimentConfig, OptimizationConfig
 from rich.console import Console
 
 console = Console()
@@ -16,10 +13,19 @@ class ScientificModelRunner:
     def __init__(self, config_dir: str = 'config'):
         self.config_dir = config_dir
         self.challenge_configs = self._load_yaml(os.path.join(config_dir, 'challenge_config.yaml'))
-        self.model_configs = self._load_yaml(os.path.join(config_dir, 'models', 'hrm.yaml'))
-        self.model_configs.update(self._load_yaml(os.path.join(config_dir, 'models', 'hrem.yaml')))
+        self.model_configs = {}
+        hrm_config = self._load_yaml(os.path.join(config_dir, 'models', 'hrm.yaml'))
+        hrem_config = self._load_yaml(os.path.join(config_dir, 'models', 'hrem.yaml'))
+        if hrm_config:
+            self.model_configs[hrm_config['name']] = hrm_config
+        if hrem_config:
+            self.model_configs[hrem_config['name']] = hrem_config
+
         self.search_spaces = self._load_yaml(os.path.join(config_dir, 'search', 'hrm_search_space.yaml'))
-        self.search_spaces.update(self._load_yaml(os.path.join(config_dir, 'search', 'hrem_search_space.yaml')))
+        if self.search_spaces:
+            hrem_search_space = self._load_yaml(os.path.join(config_dir, 'search', 'hrem_search_space.yaml'))
+            if hrem_search_space:
+                self.search_spaces.update(hrem_search_space)
 
 
     def _load_yaml(self, path: str) -> Dict[str, Any]:
@@ -49,28 +55,60 @@ class ScientificModelRunner:
 
         engine = ScientificDiscoveryEngine(
             challenge=challenge,
-            algorithms=algorithms,
-            model_runner=self.run_model,
-            optimization_runner=self.run_optimization_wrapper
+            algorithms=algorithms
         )
 
         results = engine.execute_discovery_session(patience_budget)
         self._display_results(results)
         return results
 
+    def run_optimization_from_config(self, challenge_id: str, model_to_optimize: str, n_trials: int, smoke_test: bool):
+        """
+        Run optimization based on configuration files.
+        """
+        challenge_data = self.challenge_configs.get(challenge_id)
+        if not challenge_data:
+            raise ValueError(f"Challenge with ID '{challenge_id}' not found")
+
+        # We only want to run the model to be optimized.
+        challenge_data['models'] = [model_to_optimize]
+
+        challenge = self._create_challenge_config(challenge_data, smoke_test)
+        algorithms = self._load_algorithms(challenge_data.get("models", []))
+
+        engine = ScientificDiscoveryEngine(
+            challenge=challenge,
+            algorithms=algorithms,
+            config={"n_trials": n_trials}
+        )
+
+        results = engine.execute_discovery_session(PatienceBudget(level="high"))
+        self._display_results(results)
+        return results
+
+    def run_demo_from_config(self, challenge_id: str, smoke_test: bool):
+        """
+        Run a demo based on configuration files.
+        """
+        # A demo is just a comparison with high patience.
+        return self.run_comparison_from_config(challenge_id, patience_level="high", smoke_test=smoke_test)
+
+
     def _create_challenge_config(self, challenge_data: Dict[str, Any], smoke_test: bool) -> ChallengeConfig:
         dataset_name = challenge_data.get("dataset", "synthetic")
-        data_config = DataConfig(
-            dataset=dataset_name,
-            smoke_test=smoke_test,
-        )
+        data_config = {
+            "dataset": dataset_name,
+            "smoke_test": smoke_test,
+        }
+        from .config import ChallengeLevel
         return ChallengeConfig(
             name=challenge_data["name"],
             id=challenge_data["id"],
             description=challenge_data["description"],
             dataset=data_config,
             scientific_question=challenge_data.get("scientific_question", ""),
-            hypothesis_space=challenge_data.get("hypothesis_space", [])
+            hypothesis_space=challenge_data.get("hypothesis_space", []),
+            difficulty=ChallengeLevel.INTERMEDIATE
         )
 
     def _load_algorithms(self, algorithm_names: List[str]) -> List[AlgorithmConfig]:
@@ -87,44 +125,11 @@ class ScientificModelRunner:
                 algorithm_class=model_data['algorithm_class'],
                 search_space=self.search_spaces.get(name, {}),
                 theoretical_advantages=model_data.get('theoretical_advantages', []),
-                theoretical_limitations=model_data.get('theoretical_limitations', [])
+                theoretical_limitations=model_data.get('theoretical_limitations', []),
+                config=model_data
             )
             algorithms.append(alg_config)
         return algorithms
-
-    def run_model(self, model_config: ModelConfig, data_config: DataConfig, run_config: RunConfig, training_config: TrainingConfig) -> Dict[str, Any]:
-        """
-        Wrapper to call the hrm_system model runner.
-        """
-        return run_single_model(
-            run_config=run_config,
-            data_config=data_config,
-            model_config=model_config,
-            training_config=training_config,
-        )
-
-    def run_optimization_wrapper(self, model_config: ModelConfig, data_config: DataConfig, search_space: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Wrapper for the optimization runner.
-        """
-        run_config = RunConfig(study_name=f"{model_config.name}_optimization")
-        training_config = TrainingConfig()
-
-        optimization_config = OptimizationConfig(
-            n_trials=10, # This should be configurable
-            model_to_optimize=model_config,
-            search_space=search_space
-        )
-
-        experiment_config = ExperimentConfig(
-            mode="optimize",
-            run_config=run_config,
-            data_config=data_config,
-            training_config=training_config,
-            optimization_config=optimization_config
-        )
-
-        return run_optimization(experiment_config)
 
     def _display_results(self, results: DiscoveryResults):
         """Display the results of the discovery session."""

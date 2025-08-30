@@ -1,4 +1,20 @@
 name: HREM
-algorithm_class: hrm_system.algorithms.hrem.HREMAlgorithm
+algorithm_class: sc_engine.plugins.algorithms.hrem.HREMAlgorithm
 base_arch_config: hrem_v1
+hrem_params:
+  m_loc: 128
+  d_mem: 128
+  top_k: 4
+  H_layers: 2
+  L_layers: 2
+  H_cycles: 2
+  L_cycles: 8
+  hidden_size: 256
 search_space_config: hrem_search_space
+theoretical_advantages:
+  - "large_memory_capacity"
+  - "efficient_information_retrieval"
+  - "scalable_to_long_sequences"
+theoretical_limitations:
+  - "computational_overhead"
+  - "complexity_of_implementation"

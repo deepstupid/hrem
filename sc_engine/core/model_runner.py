@@ -26,11 +26,16 @@ class ScientificModelRunner:
         challenge_id = kwargs.get("challenge_id", "synthetic_sort")
         smoke_test = kwargs.get("smoke_test", False)
 
-        challenge_data = self.challenge_configs.get(challenge_id)
+        challenge_data = None
+        for challenge in self.challenge_configs.get("challenges", []):
+            if challenge.get("id") == challenge_id:
+                challenge_data = challenge
+                break
+
         if not challenge_data:
             raise ValueError(f"Challenge with ID '{challenge_id}' not found")
 
-        engine_config = {}
+        engine_config = {"smoke_test": smoke_test}
         patience_level = "medium"
 
         if run_type == "optimization":
@@ -63,7 +68,12 @@ class ScientificModelRunner:
 
 
     def _create_challenge_config(self, challenge_data: Dict[str, Any], smoke_test: bool) -> ChallengeConfig:
-        dataset_name = challenge_data.get("dataset", "synthetic")
+        dataset_info = challenge_data.get("dataset", {})
+        if isinstance(dataset_info, str):
+            dataset_name = dataset_info
+        else:
+            dataset_name = dataset_info.get("dataset", "synthetic")
+
         data_config = {
             "dataset": dataset_name,
             "smoke_test": smoke_test,

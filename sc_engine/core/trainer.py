@@ -3,14 +3,12 @@ import os
 import torch
 import torch.distributed as dist
 import tqdm
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
+from typing import Dict, Any, Optional
 
 from .utils import (
     LocalLogger,
     create_dataloader,
-    train_batch,
-    evaluate,
+    compute_lr,
     TrainState,
 )
 from puzzle_dataset import PuzzleDatasetMetadata
@@ -105,6 +103,138 @@ class Trainer:
         if self.training_config['smoke_test']:
             self.train_state.total_steps = 1
 
+    def _train_batch(self, batch: Any, global_batch_size: int):
+        torch._functorch.config.donated_buffer = False
+        self.train_state.step += 1
+        if self.train_state.step > self.train_state.total_steps:
+            return None
+
+        device = torch.device(self.device)
+        batch = {k: v.to(device) for k, v in batch.items()}
+
+        if self.train_state.carry is None:
+            with torch.device(device):
+                self.train_state.carry = self.train_state.model.initial_carry(batch)
+
+        use_amp = self.training_config['use_amp'] and device.type == "cuda"
+        if use_amp and self.train_state.scaler is None:
+            self.train_state.scaler = torch.cuda.amp.GradScaler()
+
+        scaler = self.train_state.scaler
+
+        if use_amp:
+            with torch.cuda.amp.autocast():
+                new_carry, loss, metrics, _, _ = self.train_state.model(carry=self.train_state.carry, batch=batch, return_keys=[])
+        else:
+            new_carry, loss, metrics, _, _ = self.train_state.model(carry=self.train_state.carry, batch=batch, return_keys=[])
+
+        self.train_state.carry = new_carry
+
+        if use_amp and scaler is not None:
+            scaled_loss = scaler.scale((1 / global_batch_size) * loss)
+            scaled_loss.backward()
+        else:
+            scaled_loss = (1 / global_batch_size) * loss
+            scaled_loss.backward()
+
+        del scaled_loss, loss
+
+        if self.world_size > 1:
+            for param in self.train_state.model.parameters():
+                if param.grad is not None:
+                    dist.all_reduce(param.grad)
+
+        lr_this_step = None
+        for optim, base_lr in zip(self.train_state.optimizers, self.train_state.optimizer_lrs):
+            lr_this_step = compute_lr(base_lr, self.training_config, self.train_state)
+
+            for param_group in optim.param_groups:
+                param_group['lr'] = lr_this_step
+
+            if use_amp and scaler is not None:
+                scaler.step(optim)
+                scaler.update()
+            else:
+                optim.step()
+            optim.zero_grad()
+
+        if len(metrics):
+            assert not any(v.requires_grad for v in metrics.values())
+
+            metric_keys = list(sorted(metrics.keys()))
+            metric_values = torch.stack([metrics[k] for k in metric_keys])
+            if self.world_size > 1:
+                dist.reduce(metric_values, dst=0)
+
+            if self.rank == 0:
+                metric_values = metric_values.cpu().numpy()
+                reduced_metrics = {k: metric_values[i] for i, k in enumerate(metric_keys)}
+
+                count = max(reduced_metrics["count"], 1)
+                reduced_metrics = {f"train/{k}": v / (global_batch_size if k.endswith("loss") else count) for k, v in reduced_metrics.items()}
+
+                reduced_metrics["train/lr"] = lr_this_step
+                return reduced_metrics
+        return None
+
+    def _evaluate(self, checkpoint_path: Optional[str]):
+        with torch.inference_mode():
+            set_ids = {k: idx for idx, k in enumerate(self.eval_metadata.sets)}
+            all_preds = {}
+            metric_keys = []
+            metric_values = None
+            metric_global_batch_size = [0 for _ in range(len(set_ids))]
+            carry = None
+            device = torch.device(self.device)
+
+            for set_name, batch, global_batch_size in self.eval_loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                with torch.device(device):
+                    carry = self.train_state.model.initial_carry(batch)
+
+                while True:
+                    carry, _, metrics, preds, all_finish = self.train_state.model(
+                        carry=carry, batch=batch, return_keys=self.training_config['eval_save_outputs']
+                    )
+                    if all_finish:
+                        break
+
+                for collection in (batch, preds):
+                    for k, v in collection.items():
+                        if k in self.training_config['eval_save_outputs']:
+                            all_preds.setdefault(k, [])
+                            all_preds[k].append(v.cpu())
+
+                del carry, preds, batch, all_finish
+
+                set_id = set_ids[set_name]
+                if metric_values is None:
+                    metric_keys = list(sorted(metrics.keys()))
+                    metric_values = torch.zeros((len(set_ids), len(metrics.values())), dtype=torch.float32, device=device)
+
+                metric_values[set_id] += torch.stack([metrics[k] for k in metric_keys])
+                metric_global_batch_size[set_id] += global_batch_size
+
+            if len(all_preds) and checkpoint_path is not None:
+                all_preds = {k: torch.cat(v, dim=0) for k, v in all_preds.items()}
+                os.makedirs(checkpoint_path, exist_ok=True)
+                torch.save(all_preds, os.path.join(checkpoint_path, f"step_{self.train_state.step}_all_preds.{self.rank}"))
+
+            if metric_values is not None:
+                if self.world_size > 1:
+                    dist.reduce(metric_values, dst=0)
+                if self.rank == 0:
+                    reduced_metrics = metric_values.cpu().numpy()
+                    reduced_metrics = {
+                        set_name: {metric_name: reduced_metrics[set_id, metric_id] for metric_id, metric_name in enumerate(metric_keys)}
+                        for set_id, set_name in enumerate(set_ids)
+                    }
+                    for set_name, metrics in reduced_metrics.items():
+                        count = metrics.pop("count")
+                        reduced_metrics[set_name] = {k: v / count for k, v in metrics.items()}
+                    return reduced_metrics
+        return None
+
     def train_and_evaluate(self) -> Dict[str, Any]:
         """
         Runs the full training and evaluation loop.
@@ -133,7 +263,7 @@ class Trainer:
             iter_start_time = time.time()
 
             for set_name, batch, global_batch_size in self.train_loader:
-                metrics = train_batch(self.training_config, self.train_state, batch, global_batch_size, rank=self.rank, world_size=self.world_size)
+                metrics = self._train_batch(batch, global_batch_size)
                 if self.rank == 0 and metrics is not None:
                     if logger:
                         logger.log(metrics, self.train_state.step)
@@ -145,7 +275,7 @@ class Trainer:
 
             self.train_state.model.eval()
             checkpoint_path = self.run_config['output_dir']
-            metrics = evaluate(self.training_config, checkpoint_path, self.train_state, self.eval_loader, self.eval_metadata, rank=self.rank, world_size=self.world_size)
+            metrics = self._evaluate(checkpoint_path)
             if self.rank == 0 and metrics is not None:
                 if logger:
                     logger.log(metrics, self.train_state.step)

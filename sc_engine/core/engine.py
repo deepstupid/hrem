@@ -19,8 +19,6 @@ from .optimization import HyperparameterOptimizer, OptunaOptimizer
 from .utils import (
     LocalLogger,
     create_dataloader,
-    train_batch,
-    evaluate,
 )
 from .trainer import Trainer
 from puzzle_dataset import PuzzleDatasetMetadata
@@ -108,9 +106,14 @@ class ScientificDiscoveryEngine:
         self.patience_manager.allocate_for_phase(phase, patience_allocation)
         start_time = time.time()
         results = {}
+        smoke_test = self.config.get("smoke_test", False)
 
         for alg in self.algorithms:
-            run_config = {"study_name": f"{self.challenge.id}_{run_suffix}_{alg.name}", "output_dir": "experiments"}
+            run_config = {
+                "study_name": f"{self.challenge.id}_{run_suffix}_{alg.name}",
+                "output_dir": "experiments",
+                "smoke_test": smoke_test
+            }
             training_config = self.default_training_config
             model_config = model_config_fn(alg)
 

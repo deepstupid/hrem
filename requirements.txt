@@ -22,3 +22,4 @@ matplotlib
 scikit-learn
 plotext
 GitPython
+PyYAML==6.0.1

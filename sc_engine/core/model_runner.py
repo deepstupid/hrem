@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Callable
 from .config import ChallengeConfig, AlgorithmConfig, PatienceBudget
 from .engine import ScientificDiscoveryEngine, DiscoveryResults
 from .config_manager import ConfigManager
@@ -15,12 +15,13 @@ class ScientificModelRunner:
         self.model_configs = self.config_manager.load_model_configs()
         self.search_spaces = self.config_manager.load_search_spaces()
 
-    def run(self, run_type: str, **kwargs):
+    def run(self, run_type: str, progress_callback: Optional[Callable] = None, **kwargs):
         """
         Run a discovery session based on the specified run type.
 
         Args:
             run_type: The type of run to execute. Can be 'comparison', 'optimization', or 'demo'.
+            progress_callback: An optional callback for reporting progress.
             **kwargs: Additional arguments for the run, such as 'challenge_id', 'smoke_test', etc.
         """
         challenge_id = kwargs.get("challenge_id", "synthetic_sort")
@@ -59,7 +60,8 @@ class ScientificModelRunner:
         engine = ScientificDiscoveryEngine(
             challenge=challenge,
             algorithms=algorithms,
-            config=engine_config
+            config=engine_config,
+            progress_callback=progress_callback
         )
 
         results = engine.execute_discovery_session(patience_budget)

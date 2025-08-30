@@ -3,7 +3,7 @@ import os
 import torch
 import torch.distributed as dist
 import tqdm
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 
 from .utils import (
     LocalLogger,
@@ -20,7 +20,7 @@ class Trainer:
     It is responsible for setting up the environment, building the model,
     and running the training and evaluation loops.
     """
-    def __init__(self, training_config: Dict[str, Any], model_config: Dict[str, Any], data_config: Dict[str, Any], run_config: Dict[str, Any]):
+    def __init__(self, training_config: Dict[str, Any], model_config: Dict[str, Any], data_config: Dict[str, Any], run_config: Dict[str, Any], progress_callback: Optional[Callable] = None):
         """
         Initializes the Trainer.
 
@@ -29,11 +29,13 @@ class Trainer:
             model_config: The configuration for the model.
             data_config: The configuration for the data.
             run_config: The configuration for the run.
+            progress_callback: An optional callback for reporting progress.
         """
         self.training_config = training_config
         self.model_config = model_config
         self.data_config = data_config
         self.run_config = run_config
+        self.progress_callback = progress_callback
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.rank = 0
@@ -174,6 +176,7 @@ class Trainer:
                 reduced_metrics = {f"train/{k}": v / (global_batch_size if k.endswith("loss") else count) for k, v in reduced_metrics.items()}
 
                 reduced_metrics["train/lr"] = lr_this_step
+                self._send_progress('train_batch', {'metrics': reduced_metrics, 'step': self.train_state.step, 'total_steps': self.train_state.total_steps})
                 return reduced_metrics
         return None
 
@@ -187,6 +190,7 @@ class Trainer:
             carry = None
             device = torch.device(self.device)
 
+            self._send_progress('start_evaluation_phase')
             for set_name, batch, global_batch_size in self.eval_loader:
                 batch = {k: v.to(device) for k, v in batch.items()}
                 with torch.device(device):
@@ -232,6 +236,7 @@ class Trainer:
                     for set_name, metrics in reduced_metrics.items():
                         count = metrics.pop("count")
                         reduced_metrics[set_name] = {k: v / count for k, v in metrics.items()}
+                    self._send_progress('end_evaluation_phase', {'metrics': reduced_metrics})
                     return reduced_metrics
         return None
 
@@ -246,13 +251,12 @@ class Trainer:
         self.prepare_dataloaders()
         self.build_model()
 
-        progress_bar = None
         logger = None
         if self.rank == 0:
-            progress_bar = tqdm.tqdm(total=self.train_state.total_steps)
             log_path = os.path.join(self.run_config['output_dir'], f"tmp_results_{self.run_config['study_name']}.json")
             logger = LocalLogger(log_path=log_path)
             logger.log({"num_params": sum(x.numel() for x in self.train_state.model.parameters())}, step=0)
+            self._send_progress('start_training', {'total_steps': self.train_state.total_steps})
 
         final_metrics = {}
         train_epochs_per_iter = self.training_config.get('eval_interval', self.training_config['epochs'])
@@ -264,10 +268,8 @@ class Trainer:
 
             for set_name, batch, global_batch_size in self.train_loader:
                 metrics = self._train_batch(batch, global_batch_size)
-                if self.rank == 0 and metrics is not None:
-                    if logger:
-                        logger.log(metrics, self.train_state.step)
-                    progress_bar.update(self.train_state.step - progress_bar.n)
+                if self.rank == 0 and metrics is not None and logger:
+                    logger.log(metrics, self.train_state.step)
 
             iter_end_time = time.time()
             iter_duration = iter_end_time - iter_start_time
@@ -287,4 +289,13 @@ class Trainer:
         if dist.is_initialized():
             dist.destroy_process_group()
 
+        self._send_progress('end_training', {'final_metrics': final_metrics})
         return final_metrics
+
+    def _send_progress(self, event_type: str, data: Dict = None):
+        """Send progress update via callback if available."""
+        if self.progress_callback:
+            payload = {'event': f'trainer:{event_type}'}
+            if data:
+                payload.update(data)
+            self.progress_callback(payload)

@@ -39,7 +39,7 @@ class DiscoveryResults:
 class ScientificDiscoveryEngine:
     """Central orchestrator for scientific exploration process."""
     
-    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], config: Dict[str, Any] = None):
+    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], config: Dict[str, Any] = None, progress_callback: Optional[Callable] = None):
         """Initialize with a scientific challenge and algorithms to compare."""
         self.challenge = challenge
         self.algorithms = algorithms
@@ -50,14 +50,14 @@ class ScientificDiscoveryEngine:
         self.timing_manager = ScientificTimingManager()
         self.results: Dict[str, Any] = {}
         self.optimizer: HyperparameterOptimizer = OptunaOptimizer()
+        self.progress_callback = progress_callback
         
         with open("config/training/default.yaml", 'r') as f:
             self.default_training_config = yaml.safe_load(f)
 
     def execute_discovery_session(self, patience_budget: PatienceBudget) -> DiscoveryResults:
         """Execute a scientifically-driven comparison within patience constraints."""
-        console.print(f"[bold blue]🔬 Starting Scientific Discovery Session[/bold blue]")
-        console.print(f"[cyan]Challenge: {self.challenge.name}[/cyan]")
+        self._send_progress('start_session', {'challenge': self.challenge.name})
         
         self.patience_manager = AdaptivePatienceManager(patience_budget, self.timing_manager)
         
@@ -82,7 +82,8 @@ class ScientificDiscoveryEngine:
 
     def _run_baseline_evaluation(self) -> Dict[str, Any]:
         """Run baseline evaluation for all algorithms."""
-        return self._run_evaluation(
+        self._send_progress('start_phase', {'phase': 'baseline_evaluation'})
+        results = self._run_evaluation(
             title="⚡ Running Baseline Evaluation",
             phase=ExplorationPhase.BASELINE_EVALUATION,
             patience_allocation=0.5,
@@ -91,6 +92,8 @@ class ScientificDiscoveryEngine:
             result_key_fn=lambda alg: alg.name,
             timing_value=0
         )
+        self._send_progress('end_phase', {'phase': 'baseline_evaluation', 'results': results})
+        return results
 
     def _run_evaluation(self,
                         title: str,
@@ -102,13 +105,14 @@ class ScientificDiscoveryEngine:
                         timing_value: int
                         ) -> Dict[str, Any]:
         """Generic method to run an evaluation phase."""
-        console.print(f"[bold blue]{title}...[/bold blue]")
+        self._send_progress('start_evaluation', {'title': title})
         self.patience_manager.allocate_for_phase(phase, patience_allocation)
         start_time = time.time()
         results = {}
         smoke_test = self.config.get("smoke_test", False)
 
-        for alg in self.algorithms:
+        for i, alg in enumerate(self.algorithms):
+            self._send_progress('start_algorithm', {'algorithm': alg.name, 'progress': (i + 1) / len(self.algorithms)})
             run_config = {
                 "study_name": f"{self.challenge.id}_{run_suffix}_{alg.name}",
                 "output_dir": "experiments",
@@ -117,36 +121,42 @@ class ScientificDiscoveryEngine:
             training_config = self.default_training_config
             model_config = model_config_fn(alg)
 
-            trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config)
+            trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config, progress_callback=self.progress_callback)
             metrics = trainer.train_and_evaluate()
             results[result_key_fn(alg)] = metrics
+            self._send_progress('end_algorithm', {'algorithm': alg.name, 'metrics': metrics})
 
         elapsed_time = time.time() - start_time
         self.patience_manager.update_patience_consumption(elapsed_time, phase)
         self.timing_manager.record_discovery_timing(f"{run_suffix}_evaluation", elapsed_time, timing_value)
+        self._send_progress('end_evaluation', {'title': title, 'results': results})
         return results
 
     def _run_hyperparameter_optimization(self, baseline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Run hyperparameter optimization with adaptive depth."""
-        console.print("[bold blue]🔍 Running Hyperparameter Optimization...[/bold blue]")
-        
+        self._send_progress('start_phase', {'phase': 'optimization'})
         optimization_results = {}
 
         for alg in self.algorithms:
             if not alg.search_space:
-                console.print(f"[yellow]No search space defined for {alg.name}, skipping optimization.[/yellow]")
+                self._send_progress('skip_optimization', {'algorithm': alg.name, 'reason': 'No search space defined.'})
                 optimization_results[alg.name] = baseline_results.get(alg.name, {})
                 continue
 
+            self._send_progress('start_optimization_alg', {'algorithm': alg.name})
+
             def objective(hparams: Dict[str, Any]) -> float:
+                self._send_progress('start_trial', {'params': hparams})
                 model_config = alg.config.copy()
                 model_config['arch_overrides'] = hparams
                 run_config = {"study_name": f"{self.challenge.id}_optimize_{alg.name}", "output_dir": "experiments"}
                 training_config = self.default_training_config
 
-                trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config)
+                trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config, progress_callback=self.progress_callback)
                 metrics = trainer.train_and_evaluate()
-                return metrics.get('all/lm_loss', float('inf'))
+                loss = metrics.get('all/lm_loss', float('inf'))
+                self._send_progress('end_trial', {'params': hparams, 'loss': loss})
+                return loss
 
             best_params = self.optimizer.optimize(
                 objective=objective,
@@ -154,19 +164,22 @@ class ScientificDiscoveryEngine:
                 n_trials=self.config.get("n_trials", 10)
             )
 
-            console.print(f"[green]Best parameters for {alg.name}: {best_params}[/green]")
+            self._send_progress('end_optimization_alg', {'algorithm': alg.name, 'best_params': best_params})
             optimization_results[alg.name] = {'best_params': best_params}
 
+        self._send_progress('end_phase', {'phase': 'optimization', 'results': optimization_results})
         return optimization_results
 
     def _run_final_evaluation(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
         """Run final evaluation with optimized parameters."""
+        self._send_progress('start_phase', {'phase': 'final_evaluation'})
+
         def model_config_fn(alg):
             config = alg.config.copy()
             config['arch_overrides'] = optimization_results.get(alg.name, {}).get('best_params', {})
             return config
 
-        return self._run_evaluation(
+        results = self._run_evaluation(
             title="🏆 Running Final Evaluation",
             phase=ExplorationPhase.FINAL_EVALUATION,
             patience_allocation=0.7,
@@ -175,10 +188,12 @@ class ScientificDiscoveryEngine:
             result_key_fn=lambda alg: f"{alg.name}_optimized",
             timing_value=1
         )
+        self._send_progress('end_phase', {'phase': 'final_evaluation', 'results': results})
+        return results
     
     def _generate_insights(self, final_results: Dict[str, Any]) -> List[ScientificInsight]:
         """Generate scientific insights from comparison results."""
-        console.print("[bold blue]💡 Generating Scientific Insights...[/bold blue]")
+        self._send_progress('start_phase', {'phase': 'insight_generation'})
         
         allocation = self.patience_manager.allocate_for_phase(ExplorationPhase.INSIGHT_GENERATION, discovery_potential=0.9)
         start_time = time.time()
@@ -193,15 +208,23 @@ class ScientificDiscoveryEngine:
         self.timing_manager.record_discovery_timing("insight_generation", elapsed_time, len(insights))
         
         if insights:
-            console.print(f"[green]✅ Generated {len(insights)} scientific insights.[/green]")
+            self._send_progress('insights_generated', {'insights': insights})
             report_generator = ScientificReportGenerator(challenge_name=self.challenge.name, algorithm_names=[alg.name for alg in self.algorithms])
             report_content = report_generator.generate_report(insights)
 
             report_path = "scientific_report.md"
             with open(report_path, "w") as f:
                 f.write(report_content)
-            console.print(f"[bold green]📄 Scientific report saved to {report_path}[/bold green]")
         else:
-            console.print("[yellow]⚠️ No significant insights generated[/yellow]")
+            self._send_progress('no_insights')
         
+        self._send_progress('end_phase', {'phase': 'insight_generation'})
         return insights
+
+    def _send_progress(self, event_type: str, data: Dict = None):
+        """Send progress update via callback if available."""
+        if self.progress_callback:
+            payload = {'event': event_type}
+            if data:
+                payload.update(data)
+            self.progress_callback(payload)

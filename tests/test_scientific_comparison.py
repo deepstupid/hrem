@@ -3,7 +3,6 @@ from sc_engine.core.insight_generator import ScientificInsightGenerator
 from sc_engine.core.report_generator import ScientificReportGenerator
 from sc_engine.core.insights import InsightType
 from sc_engine.core.config import ChallengeConfig, ChallengeLevel, AlgorithmConfig, Hypothesis
-from hrm_system.config import DataConfig
 
 @pytest.fixture
 def mock_challenge_config():
@@ -12,7 +11,7 @@ def mock_challenge_config():
         name="Test Challenge",
         id="test_challenge",
         description="A mock challenge for testing.",
-        dataset=DataConfig(path="test/path", name="test_dataset"),
+        dataset={"path": "test/path", "name": "test_dataset"},
         difficulty=ChallengeLevel.INTERMEDIATE,
         scientific_question="Which model is better?",
         hypothesis_space=[
@@ -25,8 +24,8 @@ def mock_challenge_config():
 def mock_algorithm_configs():
     """Fixture for mock AlgorithmConfigs."""
     return [
-        AlgorithmConfig(name="HREM", algorithm_class="HREM", theoretical_advantages=[], theoretical_limitations=[], search_space={}, complexity=2.0),
-        AlgorithmConfig(name="HRM", algorithm_class="HRM", theoretical_advantages=[], theoretical_limitations=[], search_space={}, complexity=1.0)
+        AlgorithmConfig(name="HREM", algorithm_class="HREM", theoretical_advantages=[], theoretical_limitations=[], search_space={}, complexity=2.0, config={}),
+        AlgorithmConfig(name="HRM", algorithm_class="HRM", theoretical_advantages=[], theoretical_limitations=[], search_space={}, complexity=1.0, config={})
     ]
 
 def test_extract_efficiency_insights(mock_challenge_config, mock_algorithm_configs):

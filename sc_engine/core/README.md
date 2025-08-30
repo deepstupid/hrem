@@ -9,18 +9,24 @@ The Scientific Comparison Engine provides a challenge-centric approach to algori
 ## Key Components
 
 ### 1. ScientificDiscoveryEngine
-The central orchestrator that manages the scientific exploration process, executing baseline evaluation, hyperparameter optimization, and final evaluation phases.
+The central orchestrator that manages the scientific exploration process. It delegates the low-level training and optimization logic to other components.
 
-### 2. AdaptivePatienceManager
+### 2. Trainer
+Encapsulates the logic for training and evaluating a model. It handles the training loop, distributed training, and dataloaders.
+
+### 3. HyperparameterOptimizer
+An abstraction for hyperparameter optimization. The current implementation uses Optuna.
+
+### 4. AdaptivePatienceManager
 Intelligently allocates user patience across exploration activities, dynamically adjusting time allocation based on discovery potential.
 
-### 3. DiscoveryAwareScheduler
+### 5. DiscoveryAwareScheduler
 Prioritizes exploration activities based on scientific discovery potential and adjusts exploration depth based on performance signals.
 
-### 4. ScientificInsightGenerator
+### 6. ScientificInsightGenerator
 Extracts meaningful scientific insights from algorithm comparisons, classifying them by type (efficiency, robustness, scalability, etc.) and discovery potential.
 
-### 5. ScientificTimingManager
+### 7. ScientificTimingManager
 Extends the existing timing utilities with scientific discovery metrics, tracking insights generated per unit time.
 
 ## Usage
@@ -34,17 +40,17 @@ python run.py compare
 python run.py compare --challenge long_range_dependencies --patience high
 
 # Run in smoke test mode for quick validation
-python run.py compare --smoke-test --patience low
+python run.py compare --smoke-test
 ```
 
 ### Python API
 ```python
-from scientific_comparison.model_runner import ScientificModelRunner
+from sc_engine.core.model_runner import ScientificModelRunner
 
 runner = ScientificModelRunner()
-results = runner.run_comparison_from_config(
+results = runner.run(
+    run_type="comparison",
     challenge_id="long_range_dependencies",
-    patience_level="medium"
 )
 ```
 
@@ -65,4 +71,4 @@ The engine comes with several predefined scientific challenges:
 
 ## Implementation Details
 
-The engine follows the specification in `README.new.md` and integrates with the existing HRM/HREM infrastructure while adding scientific rigor to the comparison process.
+The engine has been refactored to improve modularity and extensibility. The core components are now more decoupled, and the training and optimization logic has been abstracted away from the main engine.

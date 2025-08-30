@@ -1,5 +1,5 @@
-from .utils import TrainState
-from utils.functions import load_model_class
+from sc_engine.core.utils import TrainState
+from sc_engine.utils.functions import load_model_class
 import torch
 import os
 
@@ -64,7 +64,7 @@ class HRMAlgorithm:
         
         optimizers = [
             CastedSparseEmbeddingSignSGD_Distributed(
-                model.model.puzzle_emb.buffers(),
+                model.model.inner.puzzle_emb.buffers(),
                 lr=0,
                 weight_decay=self.training_config['puzzle_emb_weight_decay'],
                 world_size=world_size,

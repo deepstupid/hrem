@@ -4,8 +4,6 @@ from sc_engine.core.report_generator import ScientificReportGenerator
 from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, ChallengeLevel
 from sc_engine.core.insights import InsightType
 
-from hrm_system.config import DataConfig
-
 from sc_engine.core.config import Hypothesis
 
 @pytest.fixture
@@ -20,7 +18,7 @@ def mock_challenge_config():
             Hypothesis(description="HREM will be more efficient than HRM", metric="efficiency", expected_winner="HREM", expected_loser="HRM"),
             Hypothesis(description="HRM will be more robust than HREM", metric="robustness", expected_winner="HRM", expected_loser="HREM"),
         ],
-        dataset=DataConfig(),
+        dataset={},
         scientific_question="Which model is better?"
     )
 
@@ -28,8 +26,8 @@ def mock_challenge_config():
 def mock_algorithm_configs():
     """Fixture for mock AlgorithmConfigs."""
     return [
-        AlgorithmConfig(name="HREM", complexity=10, theoretical_advantages=["memory"], theoretical_limitations=["overhead"], algorithm_class="HREM_class", search_space={}),
-        AlgorithmConfig(name="HRM", complexity=5, theoretical_advantages=["speed"], theoretical_limitations=["memory_capacity"], algorithm_class="HRM_class", search_space={}),
+        AlgorithmConfig(name="HREM", complexity=10, theoretical_advantages=["memory"], theoretical_limitations=["overhead"], algorithm_class="HREM_class", search_space={}, config={}),
+        AlgorithmConfig(name="HRM", complexity=5, theoretical_advantages=["speed"], theoretical_limitations=["memory_capacity"], algorithm_class="HRM_class", search_space={}, config={}),
     ]
 
 class TestScientificInsightGenerator:

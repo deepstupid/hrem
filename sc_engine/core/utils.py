@@ -13,10 +13,10 @@ from torch import nn
 from torch.optim import Adam, AdamW
 from torch.utils.data import DataLoader
 
-from hrm_system.config import ModelConfig, TrainingConfig
+from typing import Dict, Any
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
 from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig, PuzzleDatasetMetadata
-from utils.functions import get_model_source_path, load_model_class
+from sc_engine.utils.functions import get_model_source_path, load_model_class
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -35,6 +35,7 @@ class LocalLogger:
 
     def log(self, data: dict, step: int):
         if self.log_path:
+            os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
             self.log_data.append({"step": step, **data})
             with open(self.log_path, "w") as f:
                 json.dump(self.log_data, f, indent=4, cls=NumpyEncoder)
@@ -55,9 +56,9 @@ class TrainState:
     scaler: Optional[torch.cuda.amp.GradScaler] = None
 
 
-def create_dataloader(training_config: TrainingConfig, data_path: str, split: str, rank: int, world_size: int, **kwargs):
+def create_dataloader(training_config: Dict[str, Any], data_path: str, split: str, rank: int, world_size: int, **kwargs):
     dataset = PuzzleDataset(PuzzleDatasetConfig(
-        seed=training_config.seed,
+        seed=training_config['seed'],
         dataset_path=data_path,
         rank=rank,
         num_replicas=world_size,
@@ -66,8 +67,8 @@ def create_dataloader(training_config: TrainingConfig, data_path: str, split: st
     dataloader = DataLoader(
         dataset,
         batch_size=None,
-        num_workers=training_config.num_workers,
-        prefetch_factor=training_config.prefetch_factor,
+        num_workers=training_config['num_workers'],
+        prefetch_factor=training_config['prefetch_factor'],
         pin_memory=True,
         persistent_workers=True
     )
@@ -94,26 +95,26 @@ def linear_schedule_with_warmup_lr_lambda(
     return base_lr * (1.0 - progress * (1.0 - min_ratio))
 
 
-def compute_lr(base_lr: float, training_config: TrainingConfig, train_state: TrainState):
-    if training_config.lr_schedule == "linear":
+def compute_lr(base_lr: float, training_config: Dict[str, Any], train_state: TrainState):
+    if training_config['lr_schedule'] == "linear":
         return linear_schedule_with_warmup_lr_lambda(
             current_step=train_state.step,
             base_lr=base_lr,
-            num_warmup_steps=round(training_config.lr_warmup_steps),
+            num_warmup_steps=round(training_config['lr_warmup_steps']),
             num_training_steps=train_state.total_steps,
-            min_ratio=training_config.lr_min_ratio
+            min_ratio=training_config['lr_min_ratio']
         )
     else:  # default to cosine
         return cosine_schedule_with_warmup_lr_lambda(
             current_step=train_state.step,
             base_lr=base_lr,
-            num_warmup_steps=round(training_config.lr_warmup_steps),
+            num_warmup_steps=round(training_config['lr_warmup_steps']),
             num_training_steps=train_state.total_steps,
-            min_ratio=training_config.lr_min_ratio
+            min_ratio=training_config['lr_min_ratio']
         )
 
 
-def train_batch(training_config: TrainingConfig, train_state: TrainState, batch: Any, global_batch_size: int, rank: int, world_size: int):
+def train_batch(training_config: Dict[str, Any], train_state: TrainState, batch: Any, global_batch_size: int, rank: int, world_size: int):
     torch._functorch.config.donated_buffer = False
     train_state.step += 1
     if train_state.step > train_state.total_steps:
@@ -127,7 +128,7 @@ def train_batch(training_config: TrainingConfig, train_state: TrainState, batch:
             train_state.carry = train_state.model.initial_carry(batch)
 
     # Enable gradient scaling for mixed precision training
-    use_amp = training_config.use_amp and device.type == "cuda"
+    use_amp = training_config['use_amp'] and device.type == "cuda"
     if use_amp and train_state.scaler is None:
         train_state.scaler = torch.cuda.amp.GradScaler()
 
@@ -194,7 +195,7 @@ def train_batch(training_config: TrainingConfig, train_state: TrainState, batch:
     return None
 
 
-def evaluate(training_config: TrainingConfig, checkpoint_path: Optional[str], train_state: TrainState, eval_loader: torch.utils.data.DataLoader, eval_metadata: PuzzleDatasetMetadata, rank: int, world_size: int):
+def evaluate(training_config: Dict[str, Any], checkpoint_path: Optional[str], train_state: TrainState, eval_loader: torch.utils.data.DataLoader, eval_metadata: PuzzleDatasetMetadata, rank: int, world_size: int):
     with torch.inference_mode():
         set_ids = {k: idx for idx, k in enumerate(eval_metadata.sets)}
 
@@ -212,14 +213,14 @@ def evaluate(training_config: TrainingConfig, checkpoint_path: Optional[str], tr
                 carry = train_state.model.initial_carry(batch)
 
             while True:
-                carry, _, metrics, preds, all_finish = train_state.model(carry=carry, batch=batch, return_keys=training_config.eval_save_outputs)
+                carry, _, metrics, preds, all_finish = train_state.model(carry=carry, batch=batch, return_keys=training_config['eval_save_outputs'])
 
                 if all_finish:
                     break
 
             for collection in (batch, preds):
                 for k, v in collection.items():
-                    if k in training_config.eval_save_outputs:
+                    if k in training_config['eval_save_outputs']:
                         all_preds.setdefault(k, [])
                         all_preds[k].append(v.cpu())
 
@@ -265,7 +266,7 @@ def save_train_state(checkpoint_path: Optional[str], train_state: TrainState):
     torch.save(train_state.model.state_dict(), os.path.join(checkpoint_path, f"step_{train_state.step}.pth"))
 
 
-def save_code_and_config(checkpoint_path: Optional[str], model_config: ModelConfig, training_config: TrainingConfig, logger: LocalLogger):
+def save_code_and_config(checkpoint_path: Optional[str], model_config: Dict[str, Any], training_config: Dict[str, Any], logger: LocalLogger):
     if checkpoint_path is None:
         return
 
@@ -275,8 +276,8 @@ def save_code_and_config(checkpoint_path: Optional[str], model_config: ModelConf
     # and store the commit hash instead of copying the files.
     # For now, we just save the configs.
     config_to_save = {
-        "model_config": model_config.model_dump(),
-        "training_config": training_config.model_dump()
+        "model_config": model_config,
+        "training_config": training_config
     }
 
     config_file = os.path.join(checkpoint_path, "all_config.yaml")

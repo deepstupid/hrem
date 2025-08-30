@@ -9,7 +9,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.'))
 
 from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel, Hypothesis
 from sc_engine.core.engine import ScientificDiscoveryEngine
-from hrm_system.config import DataConfig
 
 def test_full_workflow():
     """Test the full scientific discovery workflow."""
@@ -20,7 +19,7 @@ def test_full_workflow():
         name="Sequence Duplication Challenge",
         id="sequence_duplication",
         description="Test algorithms on duplicating sequences which requires memory and pattern recognition",
-        dataset=DataConfig(dataset="synthetic-duplicate"),
+        dataset={"dataset": "synthetic-duplicate"},
         difficulty=ChallengeLevel.BEGINNER,
         scientific_question="How do HRM and HREM differ in pattern duplication tasks?",
         hypothesis_space=[
@@ -32,7 +31,16 @@ def test_full_workflow():
     # Create algorithm configurations
     hrm_config = AlgorithmConfig(
         name="HRM",
-        algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
+        algorithm_class="sc_engine.plugins.algorithms.hrm.HRMAlgorithm",
+            config={
+                    "name": "hrm.act@HierarchicalReasoningModel_ACTV1",
+                "algorithm_class": "sc_engine.plugins.algorithms.hrm.HRMAlgorithm",
+                    "loss": {"name": "models.losses@ACTLossHead", "loss_type": "softmax_cross_entropy"},
+                    "H_cycles": 1, "L_cycles": 1, "H_layers": 1, "L_layers": 1,
+                    "hidden_size": 128, "expansion": 2.0, "num_heads": 4,
+                    "pos_encodings": "rope", "halt_max_steps": 1, "halt_exploration_prob": 0.0,
+                        "puzzle_emb_ndim": 16,
+            },
         theoretical_advantages=["computational_efficiency", "simplicity_of_architecture"],
         theoretical_limitations=["limited_memory_capacity", "difficulty_with_long_range_dependencies"],
         search_space={
@@ -43,7 +51,17 @@ def test_full_workflow():
     
     hrem_config = AlgorithmConfig(
         name="HREM",
-        algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm",
+        algorithm_class="sc_engine.plugins.algorithms.hrem.HREMAlgorithm",
+            config={
+                    "name": "hrm.hrem@HREM",
+                "algorithm_class": "sc_engine.plugins.algorithms.hrem.HREMAlgorithm",
+                    "loss": {"name": "models.losses@ACTLossHead", "loss_type": "softmax_cross_entropy"},
+                    "H_cycles": 1, "L_cycles": 1, "H_layers": 1, "L_layers": 1,
+                    "hidden_size": 128, "expansion": 2.0, "num_heads": 4,
+                    "pos_encodings": "rope", "halt_max_steps": 1, "halt_exploration_prob": 0.0,
+                    "use_memory": True,
+                        "puzzle_emb_ndim": 16,
+            },
         theoretical_advantages=["large_memory_capacity", "efficient_information_retrieval", "scalable_to_long_sequences"],
         theoretical_limitations=["computational_overhead", "complexity_of_implementation"],
         search_space={
@@ -59,7 +77,9 @@ def test_full_workflow():
     patience_budget = PatienceBudget(level="low")
     
     # Initialize the engine
-    engine = ScientificDiscoveryEngine(challenge, algorithms)
+    engine = ScientificDiscoveryEngine(challenge, algorithms, config={"n_trials": 1})
+    engine.default_training_config['epochs'] = 1
+    engine.default_training_config['smoke_test'] = True
     
     # Execute the discovery session
     results = engine.execute_discovery_session(patience_budget)

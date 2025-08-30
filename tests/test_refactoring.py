@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock
 import torch
+import sc_engine
 from sc_engine.plugins.algorithms.hrem import HREMAlgorithm
 from sc_engine.core.insight_generator import ScientificInsightGenerator
 import itertools
@@ -107,6 +108,32 @@ class RefactoringTests(unittest.TestCase):
         # Test ModelA vs ModelC (should not be significant)
         self.assertIn("ModelC", p_values["ModelA"])
         self.assertGreater(p_values["ModelA"]["ModelC"], 0.05)
+
+
+class TrainerTests(unittest.TestCase):
+    def test_trainer_initialization(self):
+        """Test that the Trainer class initializes correctly."""
+        training_config = {"epochs": 1, "global_batch_size": 32, "seed": 0, "smoke_test": True}
+        model_config = {"algorithm_class": "sc_engine.plugins.algorithms.hrm.HRMAlgorithm"}
+        data_config = {"dataset": "synthetic-duplicate"}
+        run_config = {"study_name": "test_trainer", "output_dir": "experiments"}
+
+        trainer = sc_engine.core.trainer.Trainer(training_config, model_config, data_config, run_config)
+        self.assertIsNotNone(trainer)
+
+class HyperparameterOptimizerTests(unittest.TestCase):
+    def test_optimizer_runs(self):
+        """Test that the optimizer runs the objective function the correct number of times."""
+        optimizer = sc_engine.core.optimization.OptunaOptimizer()
+        objective = MagicMock(return_value=1.0)
+        search_space = {
+            "x": {"type": "float", "low": -10, "high": 10},
+            "y": {"type": "int", "low": 0, "high": 10},
+        }
+        n_trials = 5
+
+        optimizer.optimize(objective, search_space, n_trials)
+        self.assertEqual(objective.call_count, n_trials)
 
 if __name__ == "__main__":
     unittest.main()

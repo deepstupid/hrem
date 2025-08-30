@@ -22,7 +22,8 @@ def compare(challenge: str, patience: str, smoke_test: bool):
     
     try:
         runner = ScientificModelRunner()
-        results = runner.run_comparison_from_config(
+        results = runner.run(
+            run_type="comparison",
             challenge_id=challenge,
             patience_level=patience,
             smoke_test=smoke_test
@@ -50,7 +51,8 @@ def optimize(challenge: str, model_to_optimize: str, n_trials: int, smoke_test: 
 
     try:
         runner = ScientificModelRunner()
-        results = runner.run_optimization_from_config(
+        results = runner.run(
+            run_type="optimization",
             challenge_id=challenge,
             model_to_optimize=model_to_optimize,
             n_trials=n_trials,
@@ -77,7 +79,8 @@ def demo(challenge: str, smoke_test: bool):
 
     try:
         runner = ScientificModelRunner()
-        results = runner.run_demo_from_config(
+        results = runner.run(
+            run_type="demo",
             challenge_id=challenge,
             smoke_test=smoke_test
         )

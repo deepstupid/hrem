@@ -1,37 +1,39 @@
 import pytest
 from pathlib import Path
-from hrm_system import ExperimentConfig, run_optimization
+# TODO: Rewrite this as an integration test for the ScientificModelRunner
+# from sc_engine.core.model_runner import ScientificModelRunner
 
-@pytest.fixture
-def smoke_test_config():
-    """Provides a smoke test configuration for optimization mode."""
-    # Using an in-memory sqlite DB for the test to avoid file creation
-    storage_url = "sqlite:///:memory:"
 
-    return ExperimentConfig(
-        mode="optimize",
-        run_config={
-            "smoke_test": True,
-            "study_name": "test_optimization_smoke"
-        },
-        data_config={
-            "dataset": "synthetic"
-        },
-        optimization_config={
-            "n_trials": 2, # Keep it short for a test
-            "n_final_runs": 1,
-            "storage": storage_url,
-            "search_space": {
-                "path": "tests/hparam_search_space.yaml"
-            }
-        }
-    )
+# @pytest.fixture
+# def smoke_test_config():
+#     """Provides a smoke test configuration for optimization mode."""
+#     # Using an in-memory sqlite DB for the test to avoid file creation
+#     storage_url = "sqlite:///:memory:"
+
+#     return ExperimentConfig(
+#         mode="optimize",
+#         run_config={
+#             "smoke_test": True,
+#             "study_name": "test_optimization_smoke"
+#         },
+#         data_config={
+#             "dataset": "synthetic"
+#         },
+#         optimization_config={
+#             "n_trials": 2, # Keep it short for a test
+#             "n_final_runs": 1,
+#             "storage": storage_url,
+#             "search_space": {
+#                 "path": "tests/hparam_search_space.yaml"
+#             }
+#         }
+#     )
 
 # def test_run_optimization_smoke(smoke_test_config):
 #     """
 #     An integration test that runs the full optimization pipeline in smoke_test mode.
 #     This test is disabled because the smoke test is too brittle and frequently
-#     fails due to hyperparameter combinations that cause the model to crash.
+#         fails due to hyperparameter combinations that cause the model to crash.
 #     The core optimization loop is tested by the fact that it runs and generates a report.
 #     """
 #     logs = []

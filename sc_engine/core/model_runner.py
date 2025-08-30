@@ -39,15 +39,37 @@ class ScientificModelRunner:
             console.print(f"[red]Error parsing YAML file at {path}: {e}[/red]")
             return {}
 
-    def run_comparison_from_config(self, challenge_id: str,
-                                 patience_level: str = "medium",
-                                 smoke_test: bool = False) -> DiscoveryResults:
+    def run(self, run_type: str, **kwargs):
         """
-        Run comparison based on configuration files.
+        Run a discovery session based on the specified run type.
+
+        Args:
+            run_type: The type of run to execute. Can be 'comparison', 'optimization', or 'demo'.
+            **kwargs: Additional arguments for the run, such as 'challenge_id', 'smoke_test', etc.
         """
+        challenge_id = kwargs.get("challenge_id", "synthetic_sort")
+        smoke_test = kwargs.get("smoke_test", False)
+
         challenge_data = self.challenge_configs.get(challenge_id)
         if not challenge_data:
             raise ValueError(f"Challenge with ID '{challenge_id}' not found")
+
+        engine_config = {}
+        patience_level = "medium"
+
+        if run_type == "optimization":
+            model_to_optimize = kwargs.get("model_to_optimize")
+            if not model_to_optimize:
+                raise ValueError("model_to_optimize must be specified for optimization runs")
+            challenge_data['models'] = [model_to_optimize]
+            engine_config["n_trials"] = kwargs.get("n_trials", 10)
+            patience_level = "high"
+
+        elif run_type == "demo":
+            patience_level = "high"
+
+        elif run_type != "comparison":
+            raise ValueError(f"Invalid run type: {run_type}")
 
         challenge = self._create_challenge_config(challenge_data, smoke_test)
         algorithms = self._load_algorithms(challenge_data.get("models", []))
@@ -55,43 +77,13 @@ class ScientificModelRunner:
 
         engine = ScientificDiscoveryEngine(
             challenge=challenge,
-            algorithms=algorithms
+            algorithms=algorithms,
+            config=engine_config
         )
 
         results = engine.execute_discovery_session(patience_budget)
         self._display_results(results)
         return results
-
-    def run_optimization_from_config(self, challenge_id: str, model_to_optimize: str, n_trials: int, smoke_test: bool):
-        """
-        Run optimization based on configuration files.
-        """
-        challenge_data = self.challenge_configs.get(challenge_id)
-        if not challenge_data:
-            raise ValueError(f"Challenge with ID '{challenge_id}' not found")
-
-        # We only want to run the model to be optimized.
-        challenge_data['models'] = [model_to_optimize]
-
-        challenge = self._create_challenge_config(challenge_data, smoke_test)
-        algorithms = self._load_algorithms(challenge_data.get("models", []))
-
-        engine = ScientificDiscoveryEngine(
-            challenge=challenge,
-            algorithms=algorithms,
-            config={"n_trials": n_trials}
-        )
-
-        results = engine.execute_discovery_session(PatienceBudget(level="high"))
-        self._display_results(results)
-        return results
-
-    def run_demo_from_config(self, challenge_id: str, smoke_test: bool):
-        """
-        Run a demo based on configuration files.
-        """
-        # A demo is just a comparison with high patience.
-        return self.run_comparison_from_config(challenge_id, patience_level="high", smoke_test=smoke_test)
 
 
     def _create_challenge_config(self, challenge_data: Dict[str, Any], smoke_test: bool) -> ChallengeConfig:

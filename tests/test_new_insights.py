@@ -2,7 +2,6 @@ import pytest
 from sc_engine.core.insight_generator import ScientificInsightGenerator
 from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, ChallengeLevel
 from sc_engine.core.insights import InsightType
-from hrm_system.config import DataConfig
 
 @pytest.fixture
 def three_alg_challenge_config():
@@ -13,7 +12,7 @@ def three_alg_challenge_config():
         description="A test challenge for three algorithms.",
         difficulty=ChallengeLevel.ADVANCED,
         hypothesis_space=[],
-        dataset=DataConfig(),
+        dataset={},
         scientific_question="How do three algorithms compare?"
     )
 
@@ -28,7 +27,8 @@ def three_alg_configs():
             search_space={},
             theoretical_advantages=[],
             theoretical_limitations=[],
-            complexity_profile={"params": 3e6, "flops": 1e9}
+            complexity_profile={"params": 3e6, "flops": 1e9},
+            config={}
         ),
         AlgorithmConfig(
             name="Algo-Accurate",
@@ -37,7 +37,8 @@ def three_alg_configs():
             search_space={},
             theoretical_advantages=[],
             theoretical_limitations=[],
-            complexity_profile={"params": 5e6, "flops": 10e9}
+            complexity_profile={"params": 5e6, "flops": 10e9},
+            config={}
         ),
         AlgorithmConfig(
             name="Algo-Balanced",
@@ -46,7 +47,8 @@ def three_alg_configs():
             search_space={},
             theoretical_advantages=[],
             theoretical_limitations=[],
-            complexity_profile={"params": 3e6, "flops": 5e9}
+            complexity_profile={"params": 3e6, "flops": 5e9},
+            config={}
         ),
     ]
 

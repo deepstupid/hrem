@@ -7,9 +7,8 @@ import os
 # Add the project root to the path so we can import our modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
-from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel
+from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel, Hypothesis
 from sc_engine.core.engine import ScientificDiscoveryEngine
-from hrm_system.config import DataConfig
 
 def test_scientific_engine():
     """Test the scientific discovery engine with a simple example."""
@@ -20,19 +19,20 @@ def test_scientific_engine():
         name="Test Challenge",
         id="test_challenge",
         description="A test challenge for validation",
-        dataset=DataConfig(dataset="synthetic"),
+        dataset={"dataset": "synthetic"},
         difficulty=ChallengeLevel.BEGINNER,
         scientific_question="How do HRM and HREM compare on synthetic data?",
         hypothesis_space=[
-            "HREM will perform better due to its memory architecture",
-            "HRM will be faster due to its simpler structure"
+            Hypothesis(description="HREM will perform better due to its memory architecture", metric="efficiency", expected_winner="HREM", expected_loser="HRM"),
+            Hypothesis(description="HRM will be faster due to its simpler structure", metric="efficiency", expected_winner="HRM", expected_loser="HREM")
         ]
     )
     
     # Create algorithm configurations
     hrm_config = AlgorithmConfig(
         name="HRM",
-        algorithm_class="hrm_system.algorithms.hrm.HRMAlgorithm",
+        algorithm_class="sc_engine.plugins.algorithms.hrm.HRMAlgorithm",
+        config={},
         theoretical_advantages=["efficiency", "simplicity"],
         theoretical_limitations=["long_range_dependencies"],
         search_space={}
@@ -40,7 +40,8 @@ def test_scientific_engine():
     
     hrem_config = AlgorithmConfig(
         name="HREM",
-        algorithm_class="hrm_system.algorithms.hrem.HREMAlgorithm",
+        algorithm_class="sc_engine.plugins.algorithms.hrem.HREMAlgorithm",
+        config={},
         theoretical_advantages=["memory_capacity", "scalability"],
         theoretical_limitations=["computational_overhead"],
         search_space={}

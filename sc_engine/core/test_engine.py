@@ -7,8 +7,8 @@ import os
 # Add the project root to the path so we can import our modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
-from scientific_comparison.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel
-from scientific_comparison.engine import ScientificDiscoveryEngine
+from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel, Hypothesis
+from sc_engine.core.engine import ScientificDiscoveryEngine
 from hrm_system.config import DataConfig
 
 def test_full_workflow():
@@ -24,8 +24,8 @@ def test_full_workflow():
         difficulty=ChallengeLevel.BEGINNER,
         scientific_question="How do HRM and HREM differ in pattern duplication tasks?",
         hypothesis_space=[
-            "HREM's memory architecture will provide advantages in pattern duplication",
-            "HRM's recurrent structure may be more efficient for simple duplication"
+            Hypothesis(description="HREM will be more efficient than HRM", metric="efficiency", expected_winner="HREM", expected_loser="HRM"),
+            Hypothesis(description="HRM will be more robust than HREM", metric="robustness", expected_winner="HRM", expected_loser="HREM"),
         ]
     )
     

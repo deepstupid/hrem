@@ -42,13 +42,8 @@ console = Console()
 # Import the centralized logger callback
 from hrm_system import logger_callback
 
-# Import shared function
-from demo_model_runner import get_dataset_config
-
-# Import shared function
+from utils.functions import prepare_data_config, prepare_run_config
 from demo_model_runner import run_model_with_fallback
-
-# Import shared function for trial info
 from demo_shared import get_best_trial_info
 
 @click.group()
@@ -95,19 +90,17 @@ def evaluate(dataset, num_aug, n_runs, smoke_test, study_name, models, arch_over
         eval_config_dict[f"model_{chr(ord('a') + i)}"] = model_config
     eval_config = EvaluationConfig(**eval_config_dict)
 
-    # A base training config can be provided for the experiment
     training_config = TrainingConfig()
 
-    # Get dataset configuration
     try:
-        data_config = get_dataset_config(dataset, smoke_test, num_aug)
+        data_config = prepare_data_config(dataset, smoke_test, num_aug)
+        run_config = prepare_run_config(smoke_test, study_name)
     except Exception as e:
-        console.print(f"[red]Error accessing dataset: {str(e)}[/red]")
         return
 
     config = ExperimentConfig(
         mode="evaluate",
-        run_config=RunConfig(smoke_test=smoke_test, study_name=study_name, logger_callback=logger_callback),
+        run_config=run_config,
         data_config=data_config,
         training_config=training_config,
         evaluation_config=eval_config,
@@ -139,16 +132,15 @@ def optimize(dataset, n_trials, n_jobs, n_final_runs, storage, smoke_test, study
         console.print(f"[red]Error: No search space defined for model '{model}'.[/red]")
         return
 
-    # Get dataset configuration
     try:
-        data_config = get_dataset_config(dataset, smoke_test)
+        data_config = prepare_data_config(dataset, smoke_test)
+        run_config = prepare_run_config(smoke_test, study_name)
     except Exception as e:
-        console.print(f"[red]Error accessing dataset: {str(e)}[/red]")
         return
 
     config = ExperimentConfig(
         mode="optimize",
-        run_config=RunConfig(smoke_test=smoke_test, study_name=study_name, logger_callback=logger_callback),
+        run_config=run_config,
         data_config=data_config,
         optimization_config=OptimizationConfig(n_trials=n_trials, n_jobs=n_jobs, n_final_runs=n_final_runs, storage=storage, model_to_optimize=model_to_optimize, search_space=search_space)
     )

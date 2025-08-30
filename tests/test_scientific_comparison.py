@@ -1,8 +1,8 @@
 import pytest
-from scientific_comparison.insight_generator import ScientificInsightGenerator
-from scientific_comparison.report_generator import ScientificReportGenerator
-from scientific_comparison.insights import InsightType
-from scientific_comparison.config import ChallengeConfig, ChallengeLevel, AlgorithmConfig, Hypothesis
+from sc_engine.core.insight_generator import ScientificInsightGenerator
+from sc_engine.core.report_generator import ScientificReportGenerator
+from sc_engine.core.insights import InsightType
+from sc_engine.core.config import ChallengeConfig, ChallengeLevel, AlgorithmConfig, Hypothesis
 from hrm_system.config import DataConfig
 
 @pytest.fixture

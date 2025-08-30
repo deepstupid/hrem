@@ -10,7 +10,7 @@ import glob
 from typing import Dict, Any, Optional
 from hrm_system.config import DataConfig
 from rich.console import Console
-from demo_model_runner import run_model_with_fallback, get_dataset_config, run_trial_with_timing
+from demo_model_runner import run_model_with_fallback, run_trial_with_timing
 
 console = Console()
 

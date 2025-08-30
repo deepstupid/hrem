@@ -1,7 +1,7 @@
 """Scientific timing manager that extends the existing timing utilities."""
 
 from typing import Dict, Any, Optional
-from demo_timing_utils import TimingManager
+from demo_timing_utils import EnhancedTimingManager as TimingManager
 
 class ScientificTimingManager(TimingManager):
     """Extended timing manager for scientific discovery metrics."""

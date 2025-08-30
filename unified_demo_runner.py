@@ -27,10 +27,11 @@ from hrm_system.reporting import display_final_comparison, display_optimization_
 from demo_config import DemoConfig, DemoMode
 from demo_models import get_model_configs, get_model_config, get_model_search_space
 from demo_shared import get_best_trial_info
-from demo_model_runner import run_model_with_fallback, run_trial_with_timing, get_dataset_config
-from scientific_comparison.config import ChallengeConfig, ChallengeLevel, PatienceBudget
-from scientific_comparison.insight_generator import ScientificInsightGenerator
-from scientific_comparison.patience_manager import AdaptivePatienceManager, ExplorationPhase
+from demo_model_runner import run_model_with_fallback, run_trial_with_timing
+from utils.functions import prepare_data_config
+from sc_engine.core.config import ChallengeConfig, ChallengeLevel, PatienceBudget
+from sc_engine.core.insight_generator import ScientificInsightGenerator
+from sc_engine.core.patience_manager import AdaptivePatienceManager, ExplorationPhase
 from demo_visualization import plot_hyperparameter_pca
 
 console = Console()
@@ -95,7 +96,7 @@ class DemoRunner:
         )
         
         try:
-            data_config = get_dataset_config(
+            data_config = prepare_data_config(
                 f"{self.config.dataset}-{self.config.task}" if self.config.dataset == "synthetic" else self.config.dataset,
                 self.config.smoke_test,
                 self.config.num_aug
@@ -185,7 +186,7 @@ class DemoRunner:
         )
         
         try:
-            data_config = get_dataset_config(
+            data_config = prepare_data_config(
                 f"{self.config.dataset}-{self.config.task}" if self.config.dataset == "synthetic" else self.config.dataset,
                 self.config.smoke_test,
                 self.config.num_aug
@@ -322,7 +323,7 @@ class DemoRunner:
                 )
                 
                 try:
-                    data_config = get_dataset_config(
+                    data_config = prepare_data_config(
                         f"{self.config.dataset}-{self.config.task}" if self.config.dataset == "synthetic" else self.config.dataset,
                         self.config.smoke_test,
                         self.config.num_aug
@@ -449,7 +450,7 @@ def run_demo(config: DemoConfig):
         name=f"Demo Challenge: {config.dataset}-{config.task}",
         id=f"demo_{config.dataset}_{config.task}",
         description="A dynamic challenge to compare HRM and HREM in a demo setting.",
-        dataset=get_dataset_config(f"{config.dataset}-{config.task}" if config.dataset == "synthetic" else config.dataset, config.smoke_test, config.num_aug),
+        dataset=prepare_data_config(f"{config.dataset}-{config.task}" if config.dataset == "synthetic" else config.dataset, config.smoke_test, config.num_aug),
         difficulty=difficulty_map.get(config.patience_level, ChallengeLevel.BEGINNER),
         scientific_question="Which model architecture (HRM or HREM) demonstrates superior performance and adaptability on the given task?",
         hypothesis_space=[

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import torch
 from hrm_system.algorithms.hrem import HREMAlgorithm
 from hrm_system.config import TrainingConfig, ModelConfig, HREMParams
-from scientific_comparison.insight_generator import ScientificInsightGenerator
+from sc_engine.core.insight_generator import ScientificInsightGenerator
 import itertools
 
 class RefactoringTests(unittest.TestCase):

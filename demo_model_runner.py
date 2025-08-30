@@ -124,36 +124,3 @@ def run_trial_with_timing(trial: optuna.trial.Trial, config, timing_manager=None
             timing_manager.record_timing(operation_name, elapsed_time)
             
         raise optuna.TrialPruned()
-
-def get_dataset_config(dataset: str, smoke_test: bool, num_aug: int = 0) -> DataConfig:
-    """Get dataset configuration, with fallback to synthetic if needed.
-    
-    This function retrieves the configuration for a dataset, automatically
-    falling back to a synthetic dataset if the requested dataset is not available.
-    
-    Args:
-        dataset: Name of the dataset
-        smoke_test: Whether this is a smoke test
-        num_aug: Number of augmentations
-        
-    Returns:
-        Data configuration object
-        
-    Raises:
-        Exception: If neither the requested dataset nor synthetic dataset is available
-    """
-    try:
-        dataset_path = dataset_manager.get_dataset_path(dataset, smoke_test)
-        return DataConfig(dataset=dataset, dataset_path=dataset_path, num_aug=num_aug)
-    except Exception as e:
-        console.print(f"[red]Error accessing dataset '{dataset}': {str(e)}[/red]")
-        if dataset != "synthetic":
-            console.print("[yellow]Falling back to synthetic dataset...[/yellow]")
-            try:
-                dataset_path = dataset_manager.get_dataset_path("synthetic", smoke_test)
-                return DataConfig(dataset="synthetic", dataset_path=dataset_path, num_aug=num_aug)
-            except Exception as e2:
-                console.print(f"[red]Failed to access synthetic dataset: {str(e2)}[/red]")
-                raise
-        else:
-            raise

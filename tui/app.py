@@ -7,6 +7,7 @@ from .screens.visualizer import DatasetVisualizer
 from .screens.testing import TestingScreen
 from .screens.dataset_management import DatasetManagementScreen
 from .screens.demo import DemoScreen
+from .screens.discovery_dashboard import DiscoveryDashboard
 from .screens.progress import ProgressScreen
 
 class HRMApp(App):
@@ -22,6 +23,8 @@ class HRMApp(App):
         with TabbedContent(initial="demo"):
             with TabPane("Demo", id="demo"):
                 yield DemoScreen()
+            with TabPane("Discovery Dashboard", id="discovery-dashboard"):
+                yield DiscoveryDashboard()
             with TabPane("Evaluation", id="evaluation"):
                 yield EvaluationScreen()
             with TabPane("Optimization", id="optimization"):

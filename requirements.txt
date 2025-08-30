@@ -20,3 +20,5 @@ click
 scipy
 matplotlib
 scikit-learn
+plotext
+GitPython

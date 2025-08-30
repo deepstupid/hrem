@@ -34,7 +34,7 @@ class ScientificDiscoveryEngine:
         self.config = config or {}
         self.patience_manager: Optional[AdaptivePatienceManager] = None
         self.scheduler = DiscoveryAwareScheduler(algorithms, challenge)
-        self.insight_generator = ScientificInsightGenerator(challenge, algorithms, self.config.get("insights"))
+        self.insight_generator = ScientificInsightGenerator(challenge, algorithms, self.config.get("insights", "config/insight_config.yaml"))
         self.timing_manager = ScientificTimingManager()
         self.results: Dict[str, Any] = {}
         
@@ -53,7 +53,7 @@ class ScientificDiscoveryEngine:
         console.print(f"[cyan]Scientific Question: {self.challenge.scientific_question}[/cyan]")
         
         # Initialize patience manager
-        self.patience_manager = AdaptivePatienceManager(patience_budget)
+        self.patience_manager = AdaptivePatienceManager(patience_budget, self.timing_manager)
         
         # Execute baseline evaluation
         baseline_results = self._run_baseline_evaluation()
@@ -214,7 +214,7 @@ class ScientificDiscoveryEngine:
         
         # Classify discovery potential for each insight
         for insight in insights:
-            insight.discovery_potential = self.insight_generator.classify_discovery_potential(insight)
+            insight.discovery_potential = self.insight_generator.classify_discovery_potential(insight.discovery_potential)
         
         elapsed_time = time.time() - start_time
         self.patience_manager.update_patience_consumption(elapsed_time, ExplorationPhase.INSIGHT_GENERATION)

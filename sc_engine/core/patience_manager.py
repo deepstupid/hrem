@@ -22,12 +22,15 @@ class TimeAllocation:
 
 from .insights import ScientificInsight
 
+from .timing_manager import ScientificTimingManager
+
 class AdaptivePatienceManager:
     """Intelligently allocates user patience across exploration activities."""
     
-    def __init__(self, initial_patience: PatienceBudget):
+    def __init__(self, initial_patience: PatienceBudget, timing_manager: ScientificTimingManager):
         """Initialize with user's patience budget."""
         self.initial_patience = initial_patience
+        self.timing_manager = timing_manager
         self.start_time = time.time()
         self.consumed_time = 0.0
         self.phase_allocations: Dict[ExplorationPhase, float] = {}
@@ -53,7 +56,8 @@ class AdaptivePatienceManager:
     
     def allocate_for_phase(self, phase: ExplorationPhase, discovery_potential: float) -> TimeAllocation:
         """
-        Allocate patience budget based on discovery potential.
+        Allocate patience budget based on discovery potential, using the timing manager
+        to make more intelligent decisions.
         
         Args:
             phase: The exploration phase
@@ -62,9 +66,18 @@ class AdaptivePatienceManager:
         Returns:
             TimeAllocation object with allocated time
         """
+        import math
+
         remaining_budget = self.get_remaining_budget()
         
-        # Base allocation based on phase type
+        # Use the timing manager to predict discovery value
+        prediction = self.timing_manager.predict_discovery_value(remaining_budget)
+        predicted_potential = prediction.get('discovery_value', discovery_potential)
+
+        # Use a sigmoid function to make the allocation more sensitive to potential
+        # This will allocate significantly more time for high potential
+        potential_factor = 1 / (1 + math.exp(-10 * (predicted_potential - 0.5))) # Sigmoid function
+
         phase_weights = {
             ExplorationPhase.BASELINE_EVALUATION: 0.2,
             ExplorationPhase.HYPERPARAMETER_OPTIMIZATION: 0.5,
@@ -72,19 +85,18 @@ class AdaptivePatienceManager:
             ExplorationPhase.INSIGHT_GENERATION: 0.1
         }
         
-        # Adjust allocation based on discovery potential
         base_weight = phase_weights.get(phase, 0.2)
-        adjusted_weight = base_weight * (0.7 + 0.3 * discovery_potential)
+        adjusted_weight = base_weight * potential_factor
         
         allocated_seconds = remaining_budget * adjusted_weight
         
-        # For optimization phase, also calculate max trials
         max_trials = None
         if phase == ExplorationPhase.HYPERPARAMETER_OPTIMIZATION:
-            # Estimate trials based on model execution time (simplified)
-            avg_trial_time = 10.0  # This would be dynamically calculated
+            timing_stats = self.timing_manager.get_metric_stats("optimization_trial")
+            avg_trial_time = timing_stats.get('avg', 10.0) # Default to 10s if no data
+
             max_trials = max(1, int(allocated_seconds / avg_trial_time))
-            max_trials = min(max_trials, 20)  # Cap at reasonable number
+            max_trials = min(max_trials, 50)  # Increase cap
         
         allocation = TimeAllocation(
             phase=phase,
@@ -110,7 +122,8 @@ class AdaptivePatienceManager:
     
     def should_extend_exploration(self, current_insights: List[ScientificInsight]) -> bool:
         """
-        Determine if patience budget should be extended for potential insights.
+        Determine if patience budget should be extended for potential insights, using
+        the timing manager to predict the value of an extension.
         
         Args:
             current_insights: List of insights generated so far
@@ -118,16 +131,20 @@ class AdaptivePatienceManager:
         Returns:
             Boolean indicating if exploration should be extended
         """
-        if not current_insights:
-            return False
-            
-        # Calculate average discovery potential of current insights
-        avg_potential = sum(insight.discovery_potential for insight in current_insights) / len(current_insights)
-        
-        # Extend if high potential insights and we're near the threshold
         remaining_budget = self.get_remaining_budget()
+        if remaining_budget > 60 or self.total_budget >= 1800:
+            return False # Don't extend if plenty of time or already at max budget
+
+        # Predict the value of a 60-second extension
+        prediction = self.timing_manager.predict_discovery_value(60)
+        predicted_value = prediction.get('discovery_value', 0.0)
+
         threshold = self.initial_patience.extension_threshold
         
-        return (avg_potential > threshold and 
-                remaining_budget < 60 and  # Less than 1 minute remaining
-                self.total_budget < 1800)  # Not already at maximum budget
+        # Extend if the predicted value is high enough
+        if predicted_value > threshold:
+            self.total_budget += 60 # Extend budget by 1 minute
+            console.print(f"[bold green]🚀 High potential detected! Extending patience budget by 60 seconds.[/bold green]")
+            return True
+
+        return False

@@ -7,8 +7,8 @@ import os
 # Add the project root to the path so we can import our modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
-from scientific_comparison.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel
-from scientific_comparison.engine import ScientificDiscoveryEngine
+from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel
+from sc_engine.core.engine import ScientificDiscoveryEngine
 from hrm_system.config import DataConfig
 
 def test_scientific_engine():

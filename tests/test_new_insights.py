@@ -1,7 +1,7 @@
 import pytest
-from scientific_comparison.insight_generator import ScientificInsightGenerator
-from scientific_comparison.config import ChallengeConfig, AlgorithmConfig, ChallengeLevel
-from scientific_comparison.insights import InsightType
+from sc_engine.core.insight_generator import ScientificInsightGenerator
+from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, ChallengeLevel
+from sc_engine.core.insights import InsightType
 from hrm_system.config import DataConfig
 
 @pytest.fixture

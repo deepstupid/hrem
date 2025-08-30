@@ -1,8 +1,7 @@
-import yaml
-import os
 from typing import Dict, Any, List
 from .config import ChallengeConfig, AlgorithmConfig, PatienceBudget
 from .engine import ScientificDiscoveryEngine, DiscoveryResults
+from .config_manager import ConfigManager
 from rich.console import Console
 
 console = Console()
@@ -11,33 +10,10 @@ class ScientificModelRunner:
     """Runner for discovery-oriented algorithm comparison."""
 
     def __init__(self, config_dir: str = 'config'):
-        self.config_dir = config_dir
-        self.challenge_configs = self._load_yaml(os.path.join(config_dir, 'challenge_config.yaml'))
-        self.model_configs = {}
-        hrm_config = self._load_yaml(os.path.join(config_dir, 'models', 'hrm.yaml'))
-        hrem_config = self._load_yaml(os.path.join(config_dir, 'models', 'hrem.yaml'))
-        if hrm_config:
-            self.model_configs[hrm_config['name']] = hrm_config
-        if hrem_config:
-            self.model_configs[hrem_config['name']] = hrem_config
-
-        self.search_spaces = self._load_yaml(os.path.join(config_dir, 'search', 'hrm_search_space.yaml'))
-        if self.search_spaces:
-            hrem_search_space = self._load_yaml(os.path.join(config_dir, 'search', 'hrem_search_space.yaml'))
-            if hrem_search_space:
-                self.search_spaces.update(hrem_search_space)
-
-
-    def _load_yaml(self, path: str) -> Dict[str, Any]:
-        try:
-            with open(path, 'r') as f:
-                return yaml.safe_load(f)
-        except FileNotFoundError:
-            console.print(f"[red]Error: Config file not found at {path}[/red]")
-            return {}
-        except yaml.YAMLError as e:
-            console.print(f"[red]Error parsing YAML file at {path}: {e}[/red]")
-            return {}
+        self.config_manager = ConfigManager(config_dir)
+        self.challenge_configs = self.config_manager.load_challenge_configs()
+        self.model_configs = self.config_manager.load_model_configs()
+        self.search_spaces = self.config_manager.load_search_spaces()
 
     def run(self, run_type: str, **kwargs):
         """

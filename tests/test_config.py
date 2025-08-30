@@ -34,6 +34,10 @@ def test_config_validation_error():
         # 'invalid_level' is not a valid literal for the ChallengeLevel
         ChallengeLevel("invalid_level")
 
+import unittest
+from unittest.mock import patch, mock_open
+from sc_engine.core.config_manager import ConfigManager
+
 def test_valid_dataset_in_challenge_config():
     """
     Tests that a ChallengeConfig can be created with a valid dataset dictionary.
@@ -47,3 +51,42 @@ def test_valid_dataset_in_challenge_config():
         )
     except Exception as e:
         pytest.fail(f"ChallengeConfig raised an exception for a valid dataset dict: {e}")
+
+class TestConfigManager(unittest.TestCase):
+    @patch('os.path.isdir')
+    @patch('os.listdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('yaml.safe_load')
+    def test_load_model_configs(self, mock_yaml_load, mock_open, mock_listdir, mock_isdir):
+        # Arrange
+        mock_isdir.return_value = True
+        mock_listdir.return_value = ['hrm.yaml', 'hrem.yaml']
+        mock_yaml_load.side_effect = [
+            {'name': 'HRM', 'algorithm_class': 'HRMAlgorithm'},
+            {'name': 'HREM', 'algorithm_class': 'HREMAlgorithm'}
+        ]
+
+        config_manager = ConfigManager()
+
+        # Act
+        model_configs = config_manager.load_model_configs()
+
+        # Assert
+        self.assertIn('HRM', model_configs)
+        self.assertIn('HREM', model_configs)
+        self.assertEqual(model_configs['HRM']['algorithm_class'], 'HRMAlgorithm')
+        self.assertEqual(model_configs['HREM']['algorithm_class'], 'HREMAlgorithm')
+
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('yaml.safe_load')
+    def test_load_challenge_configs(self, mock_yaml_load, mock_open):
+        # Arrange
+        mock_yaml_load.return_value = {'challenge1': {'name': 'Challenge One'}}
+        config_manager = ConfigManager()
+
+        # Act
+        challenge_configs = config_manager.load_challenge_configs()
+
+        # Assert
+        self.assertIn('challenge1', challenge_configs)
+        self.assertEqual(challenge_configs['challenge1']['name'], 'Challenge One')

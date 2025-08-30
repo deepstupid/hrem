@@ -15,7 +15,7 @@ from .scheduler import DiscoveryAwareScheduler
 from .insight_generator import ScientificInsightGenerator
 from .report_generator import ScientificReportGenerator
 from .timing_manager import ScientificTimingManager
-from .optimization import OptunaOptimizer
+from .optimization import HyperparameterOptimizer, OptunaOptimizer
 from .utils import (
     LocalLogger,
     create_dataloader,
@@ -51,6 +51,7 @@ class ScientificDiscoveryEngine:
         self.insight_generator = ScientificInsightGenerator(challenge, algorithms, self.config.get("insights", "config/insight_config.yaml"))
         self.timing_manager = ScientificTimingManager()
         self.results: Dict[str, Any] = {}
+        self.optimizer: HyperparameterOptimizer = OptunaOptimizer()
         
         with open("config/training/default.yaml", 'r') as f:
             self.default_training_config = yaml.safe_load(f)
@@ -83,57 +84,50 @@ class ScientificDiscoveryEngine:
 
     def _run_baseline_evaluation(self) -> Dict[str, Any]:
         """Run baseline evaluation for all algorithms."""
-        console.print("[bold blue]⚡ Running Baseline Evaluation...[/bold blue]")
-        allocation = self.patience_manager.allocate_for_phase(ExplorationPhase.BASELINE_EVALUATION, 0.5)
+        return self._run_evaluation(
+            title="⚡ Running Baseline Evaluation",
+            phase=ExplorationPhase.BASELINE_EVALUATION,
+            patience_allocation=0.5,
+            run_suffix="baseline",
+            model_config_fn=lambda alg: alg.config,
+            result_key_fn=lambda alg: alg.name,
+            timing_value=0
+        )
+
+    def _run_evaluation(self,
+                        title: str,
+                        phase: ExplorationPhase,
+                        patience_allocation: float,
+                        run_suffix: str,
+                        model_config_fn: Callable[[AlgorithmConfig], Dict[str, Any]],
+                        result_key_fn: Callable[[AlgorithmConfig], str],
+                        timing_value: int
+                        ) -> Dict[str, Any]:
+        """Generic method to run an evaluation phase."""
+        console.print(f"[bold blue]{title}...[/bold blue]")
+        self.patience_manager.allocate_for_phase(phase, patience_allocation)
         start_time = time.time()
-        baseline_results = {}
-        
+        results = {}
+
         for alg in self.algorithms:
-            run_config = {"study_name": f"{self.challenge.id}_baseline_{alg.name}", "output_dir": "experiments"}
+            run_config = {"study_name": f"{self.challenge.id}_{run_suffix}_{alg.name}", "output_dir": "experiments"}
             training_config = self.default_training_config
-            model_config = alg.config
+            model_config = model_config_fn(alg)
 
             trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config)
             metrics = trainer.train_and_evaluate()
-            baseline_results[alg.name] = metrics
-        
+            results[result_key_fn(alg)] = metrics
+
         elapsed_time = time.time() - start_time
-        self.patience_manager.update_patience_consumption(elapsed_time, ExplorationPhase.BASELINE_EVALUATION)
-        self.timing_manager.record_discovery_timing("baseline_evaluation", elapsed_time, 0)
-        return baseline_results
-
-    def _prepare_objective(self, alg: AlgorithmConfig, trial_number: int) -> float:
-        """Prepares and runs a single optimization trial."""
-        hparams = {}
-        # This part is still coupled with optuna trial object, but the objective is now separated.
-        # A further refactoring could be to pass a generic trial object.
-        def objective(trial: optuna.Trial) -> float:
-            for param_name, param_config in alg.search_space.items():
-                if param_config['type'] == 'int':
-                    hparams[param_name] = trial.suggest_int(param_name, param_config['low'], param_config['high'])
-                elif param_config['type'] == 'float':
-                    hparams[param_name] = trial.suggest_float(param_name, param_config['low'], param_config['high'], log=param_config.get('log', False))
-                elif param_config['type'] == 'categorical':
-                    hparams[param_name] = trial.suggest_categorical(param_name, param_config['choices'])
-
-            model_config = alg.config.copy()
-            model_config['arch_overrides'] = hparams
-
-            run_config = {"study_name": f"{self.challenge.id}_optimize_{alg.name}_{trial_number}", "output_dir": "experiments"}
-            training_config = self.default_training_config
-
-            trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config)
-            metrics = trainer.train_and_evaluate()
-
-            return metrics.get('all/lm_loss', float('inf'))
-        return objective
+        self.patience_manager.update_patience_consumption(elapsed_time, phase)
+        self.timing_manager.record_discovery_timing(f"{run_suffix}_evaluation", elapsed_time, timing_value)
+        return results
 
     def _run_hyperparameter_optimization(self, baseline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Run hyperparameter optimization with adaptive depth."""
         console.print("[bold blue]🔍 Running Hyperparameter Optimization...[/bold blue]")
         
         optimization_results = {}
-        optimizer = OptunaOptimizer()
 
         for alg in self.algorithms:
             if not alg.search_space:
@@ -141,17 +135,18 @@ class ScientificDiscoveryEngine:
                 optimization_results[alg.name] = baseline_results.get(alg.name, {})
                 continue
 
-            def objective_for_optimizer(hparams: Dict[str, Any]) -> float:
+            def objective(hparams: Dict[str, Any]) -> float:
                 model_config = alg.config.copy()
                 model_config['arch_overrides'] = hparams
                 run_config = {"study_name": f"{self.challenge.id}_optimize_{alg.name}", "output_dir": "experiments"}
                 training_config = self.default_training_config
+
                 trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config)
                 metrics = trainer.train_and_evaluate()
                 return metrics.get('all/lm_loss', float('inf'))
 
-            best_params = optimizer.optimize(
-                objective=objective_for_optimizer,
+            best_params = self.optimizer.optimize(
+                objective=objective,
                 search_space=alg.search_space,
                 n_trials=self.config.get("n_trials", 10)
             )
@@ -163,26 +158,20 @@ class ScientificDiscoveryEngine:
 
     def _run_final_evaluation(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
         """Run final evaluation with optimized parameters."""
-        console.print("[bold blue]🏆 Running Final Evaluation...[/bold blue]")
-        allocation = self.patience_manager.allocate_for_phase(ExplorationPhase.FINAL_EVALUATION, 0.7)
-        start_time = time.time()
-        final_results = {}
-        
-        for alg in self.algorithms:
-            run_config = {"study_name": f"{self.challenge.id}_final_{alg.name}", "output_dir": "experiments"}
-            training_config = self.default_training_config
+        def model_config_fn(alg):
+            config = alg.config.copy()
+            config['arch_overrides'] = optimization_results.get(alg.name, {}).get('best_params', {})
+            return config
 
-            model_config = alg.config.copy()
-            model_config['arch_overrides'] = optimization_results.get(alg.name, {}).get('best_params', {})
-
-            trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config)
-            metrics = trainer.train_and_evaluate()
-            final_results[f"{alg.name}_optimized"] = metrics
-
-        elapsed_time = time.time() - start_time
-        self.patience_manager.update_patience_consumption(elapsed_time, ExplorationPhase.FINAL_EVALUATION)
-        self.timing_manager.record_discovery_timing("final_evaluation", elapsed_time, 1)
-        return final_results
+        return self._run_evaluation(
+            title="🏆 Running Final Evaluation",
+            phase=ExplorationPhase.FINAL_EVALUATION,
+            patience_allocation=0.7,
+            run_suffix="final",
+            model_config_fn=model_config_fn,
+            result_key_fn=lambda alg: f"{alg.name}_optimized",
+            timing_value=1
+        )
     
     def _generate_insights(self, final_results: Dict[str, Any]) -> List[ScientificInsight]:
         """Generate scientific insights from comparison results."""

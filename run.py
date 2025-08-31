@@ -72,33 +72,18 @@ def optimize(challenge: str, model_to_optimize: str, n_trials: int, smoke_test: 
     )
     console.print("[green]✅ Hyperparameter optimization completed successfully![/green]")
 
-@cli.command()
-@click.option("--challenge", type=str, default="quick_comparison", help="Challenge ID to run for the demo.")
-@click.option("--smoke-test", is_flag=True, default=False, help="Run in smoke test mode.")
-@click.option("--model", type=str, multiple=True, help="Model to run. Can be specified multiple times.")
-@handle_exceptions
-def demo(challenge: str, smoke_test: bool, model: list[str]):
-    """Run a non-interactive, scripted demonstration of a full workflow."""
-    console.print(f"[bold blue]🎬 Starting Demo for Challenge: {challenge}[/bold blue]")
 
-    runner = ScientificModelRunner()
-    runner.run(
-        run_type="demo",
-        challenge_id=challenge,
-        smoke_test=smoke_test,
-        models=list(model) if model else None
-    )
-    console.print("[green]✅ Demo completed successfully![/green]")
 
 @cli.command()
-def tui():
-    """Launch the Textual User Interface."""
+def gui():
+    """Launch the PyQt6 Graphical User Interface."""
     try:
-        from tui.main import main as tui_main
-        tui_main()
+        from gui.main import main as gui_main
+        gui_main()
     except ImportError as e:
-        console.print(f"[red]TUI Error: {e}[/red]")
-        console.print("[yellow]Make sure TUI dependencies are installed.[/yellow]")
+        console.print(f"[red]GUI Error: {e}[/red]")
+        console.print("[yellow]Make sure PyQt6 is installed: pip install PyQt6[/yellow]")
+
 
 if __name__ == "__main__":
     cli()

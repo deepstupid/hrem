@@ -10,13 +10,13 @@ pip install -r requirements.txt
 
 # --- Dataset Preparation ---
 echo "Preparing dataset..."
-python dataset/build_synthetic_dataset.py --output-dir data/synthetic-smoke --num-samples 1 --task-type copy
-DATA_PATH="data/synthetic-smoke"
+python dataset/build_synthetic_dataset.py --output-dir data/synthetic-sort-smoke --num-samples 1 --task-type sort
+DATA_PATH="data/synthetic-sort-smoke"
 
 # --- HRM Training ---
 echo "Training HRM..."
 python run.py evaluate \
-    --dataset synthetic \
+    --challenge synthetic_sort \
     --models HRM \
     --smoke-test \
     --arch-overrides '{"forward_dtype": "float32", "hidden_size": 16, "H_layers": 1, "L_layers": 1, "puzzle_emb_ndim": 16}'

@@ -1,0 +1,8 @@
+name: Random
+algorithm_class: sc_engine.plugins.algorithms.random.RandomAlgorithm
+theoretical_advantages:
+  - "Extremely fast"
+  - "Low computational cost"
+theoretical_limitations:
+  - "Not expected to learn anything"
+  - "Performance should be at chance level"

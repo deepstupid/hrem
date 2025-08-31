@@ -16,9 +16,12 @@ def cli():
 @click.option("--patience", type=click.Choice(["low", "medium", "high"]), default="medium", 
               help="Patience level for the comparison.")
 @click.option("--smoke-test", is_flag=True, default=False, help="Run in smoke test mode.")
-def compare(challenge: str, patience: str, smoke_test: bool):
-    """Run a scientific algorithm comparison for a specified challenge."""
-    console.print(f"[bold blue]🔬 Starting Scientific Comparison for Challenge: {challenge}[/bold blue]")
+@click.option("--dataset", type=str, default=None, help="Dataset to use.")
+@click.option("--models", type=str, multiple=True, help="Models to evaluate.")
+@click.option("--arch-overrides", type=str, default=None, help="JSON string of architecture overrides.")
+def evaluate(challenge: str, patience: str, smoke_test: bool, dataset: str, models: list[str], arch_overrides: str):
+    """Run a scientific algorithm evaluation for a specified challenge."""
+    console.print(f"[bold blue]🔬 Starting Scientific Evaluation for Challenge: {challenge}[/bold blue]")
     
     try:
         runner = ScientificModelRunner()
@@ -26,9 +29,12 @@ def compare(challenge: str, patience: str, smoke_test: bool):
             run_type="comparison",
             challenge_id=challenge,
             patience_level=patience,
-            smoke_test=smoke_test
+            smoke_test=smoke_test,
+            dataset=dataset,
+            models=list(models) if models else None,
+            arch_overrides=arch_overrides
         )
-        console.print("[green]✅ Scientific comparison completed successfully![/green]")
+        console.print("[green]✅ Scientific evaluation completed successfully![/green]")
         
     except ValueError as e:
         console.print(f"[red]Configuration Error: {e}[/red]")
@@ -37,8 +43,6 @@ def compare(challenge: str, patience: str, smoke_test: bool):
         console.print("[yellow]Please ensure all required modules are installed and accessible.[/yellow]")
     except Exception as e:
         console.print(f"[red]An unexpected error occurred: {e}[/red]")
-        import traceback
-        console.print(traceback.format_exc())
 
 @cli.command()
 @click.option("--challenge", type=str, default="synthetic_sort", help="Challenge ID to run.")
@@ -67,8 +71,6 @@ def optimize(challenge: str, model_to_optimize: str, n_trials: int, smoke_test: 
         console.print("[yellow]Please ensure all required modules are installed and accessible.[/yellow]")
     except Exception as e:
         console.print(f"[red]An unexpected error occurred: {e}[/red]")
-        import traceback
-        console.print(traceback.format_exc())
 
 @cli.command()
 @click.option("--challenge", type=str, default="quick_comparison", help="Challenge ID to run for the demo.")
@@ -95,8 +97,6 @@ def demo(challenge: str, smoke_test: bool, model: list[str]):
         console.print("[yellow]Please ensure all required modules are installed and accessible.[/yellow]")
     except Exception as e:
         console.print(f"[red]An unexpected error occurred: {e}[/red]")
-        import traceback
-        console.print(traceback.format_exc())
 
 @cli.command()
 def tui():

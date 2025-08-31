@@ -1,6 +1,19 @@
 # Challenge Configuration for HRM/HREM Demo System
 
 challenges:
+  - name: "Synthetic Sort"
+    id: "synthetic_sort"
+    description: "A simple sorting task for smoke testing."
+    difficulty: "BEGINNER"
+    hardware: "Low"
+    duration: "~15 sec"
+    dataset:
+      dataset: "synthetic-sort"
+    models:
+      - "HRM"
+    patience_level: "low"
+    optimization: false
+
   - name: "Quick Comparison"
     id: "quick_comparison"
     description: "A quick comparison between HRM and HREM algorithms."
@@ -42,3 +55,17 @@ challenges:
       - "HREM"
     patience_level: "medium"
     optimization: true
+
+  - name: "Synthetic Duplicate"
+    id: "synthetic_duplicate"
+    description: "A simple duplication task."
+    difficulty: "BEGINNER"
+    hardware: "Low"
+    duration: "~20 sec"
+    dataset:
+      dataset: "synthetic-duplicate"
+    models:
+      - "HRM"
+      - "Random"
+    patience_level: "low"
+    optimization: false

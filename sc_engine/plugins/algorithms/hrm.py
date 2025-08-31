@@ -14,27 +14,45 @@ class HRMAlgorithm:
         self.train_state = None
 
     def initialize_train_state(self, train_metadata, world_size: int, rank: int):
-        model_cfg = self.model_config.copy()
+        from omegaconf import OmegaConf
 
-        # Add/override with other dynamic parameters
-        model_cfg.update({
+        # Load base architecture config
+        arch_config_name = self.model_config.get('base_arch_config')
+        if not arch_config_name:
+            raise ValueError("base_arch_config not specified in model config")
+
+        arch_config_path = os.path.join('config', 'arch', f"{arch_config_name}.yaml")
+        try:
+            model_cfg_omega = OmegaConf.load(arch_config_path)
+        except FileNotFoundError:
+            raise ValueError(f"Architecture config file not found: {arch_config_path}")
+
+        # Create a dictionary of overrides from the model-specific config
+        overrides = {k: v for k, v in self.model_config.items() if k not in ['name', 'base_arch_config']}
+        model_cfg_omega = OmegaConf.merge(model_cfg_omega, OmegaConf.create(overrides))
+
+        # Create a dictionary for dynamic parameters and overrides
+        dynamic_params = {
             "batch_size": self.training_config['global_batch_size'] // world_size,
             "vocab_size": train_metadata.vocab_size,
             "seq_len": train_metadata.seq_len,
             "num_puzzle_identifiers": train_metadata.num_puzzle_identifiers,
             "causal": False,
-        })
+        }
 
-        # Apply overrides from model_config
-        if self.model_config.get('arch_overrides'):
-            model_cfg.update(self.model_config['arch_overrides'])
-
+        # Apply smoke test overrides if applicable
         if self.training_config.get('smoke_test'):
-            model_cfg.update({
+            dynamic_params.update({
                 "puzzle_emb_ndim": 16,
                 "num_heads": 1,
                 "expansion": 1.0,
             })
+
+        # Merge dynamic params and overrides
+        model_cfg_omega = OmegaConf.merge(model_cfg_omega, OmegaConf.create(dynamic_params))
+
+        # Resolve all interpolations and get the final config dictionary
+        model_cfg = OmegaConf.to_container(model_cfg_omega, resolve=True)
 
         # Instantiate model with loss head
         model_cls = load_model_class(model_cfg['name'])

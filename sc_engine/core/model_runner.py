@@ -19,43 +19,25 @@ class ScientificModelRunner:
     def run(self, run_type: str, progress_callback: Optional[Callable] = None, **kwargs):
         """
         Run a discovery session based on the specified run type.
-
-        Args:
-            run_type: The type of run to execute. Can be 'comparison', 'optimization', or 'demo'.
-            progress_callback: An optional callback for reporting progress.
-            **kwargs: Additional arguments for the run, such as 'challenge_id', 'smoke_test', 'models', etc.
+        This method now delegates to specific handlers for each run type.
         """
-        challenge_id = kwargs.get("challenge_id", "quick_comparison")
-        smoke_test = kwargs.get("smoke_test", False)
-        models = kwargs.get("models", None)
-
-        challenge_data = self.challenge_registry.get_challenge_by_id(challenge_id)
-
-        if not challenge_data:
-            raise ValueError(f"Challenge with ID '{challenge_id}' not found")
-
-        if models:
-            challenge_data['models'] = models
-
-        engine_config = {"smoke_test": smoke_test}
-        patience_level = "medium"
-
-        if run_type == "optimization":
-            model_to_optimize = kwargs.get("model_to_optimize")
-            if not model_to_optimize:
-                raise ValueError("model_to_optimize must be specified for optimization runs")
-            challenge_data['models'] = [model_to_optimize]
-            engine_config["n_trials"] = kwargs.get("n_trials", 10)
-            patience_level = "high"
-
-        elif run_type == "demo":
-            patience_level = "high"
-
-        elif run_type != "comparison":
+        run_handlers = {
+            "comparison": self._run_comparison,
+            "optimization": self._run_optimization,
+            "demo": self._run_demo,
+        }
+        handler = run_handlers.get(run_type)
+        if not handler:
             raise ValueError(f"Invalid run type: {run_type}")
 
-        challenge = self._create_challenge_config(challenge_data, smoke_test)
-        algorithms = self._load_algorithms(challenge_data.get("models", []))
+        return handler(progress_callback=progress_callback, **kwargs)
+
+    def _execute_engine(self, challenge_data: Dict, engine_config: Dict, patience_level: str, arch_overrides: Optional[str], dataset_override: Optional[str], progress_callback: Optional[Callable]):
+        """Helper to configure and run the scientific discovery engine."""
+        smoke_test = engine_config.get("smoke_test", False)
+
+        challenge = self._create_challenge_config(challenge_data, smoke_test, dataset_override=dataset_override)
+        algorithms = self._load_algorithms(challenge_data.get("models", []), arch_overrides=arch_overrides)
         patience_budget = PatienceBudget(level=patience_level)
 
         engine = ScientificDiscoveryEngine(
@@ -69,10 +51,79 @@ class ScientificModelRunner:
         self._display_results(results)
         return results
 
+    def _run_comparison(self, progress_callback: Optional[Callable], **kwargs):
+        challenge_id = kwargs.get("challenge_id", "quick_comparison")
+        challenge_data = self.challenge_registry.get_challenge_by_id(challenge_id)
+        if not challenge_data:
+            raise ValueError(f"Challenge with ID '{challenge_id}' not found")
 
-    def _create_challenge_config(self, challenge_data: Dict[str, Any], smoke_test: bool) -> ChallengeConfig:
+        if kwargs.get("models"):
+            challenge_data['models'] = kwargs.get("models")
+
+        engine_config = {"smoke_test": kwargs.get("smoke_test", False)}
+        patience_level = kwargs.get("patience_level", "medium")
+
+        return self._execute_engine(
+            challenge_data=challenge_data,
+            engine_config=engine_config,
+            patience_level=patience_level,
+            arch_overrides=kwargs.get("arch_overrides"),
+            dataset_override=kwargs.get("dataset"),
+            progress_callback=progress_callback
+        )
+
+    def _run_optimization(self, progress_callback: Optional[Callable], **kwargs):
+        challenge_id = kwargs.get("challenge_id")
+        challenge_data = self.challenge_registry.get_challenge_by_id(challenge_id)
+        if not challenge_data:
+            raise ValueError(f"Challenge with ID '{challenge_id}' not found")
+
+        model_to_optimize = kwargs.get("model_to_optimize")
+        if not model_to_optimize:
+            raise ValueError("model_to_optimize must be specified for optimization runs")
+        challenge_data['models'] = [model_to_optimize]
+
+        engine_config = {
+            "smoke_test": kwargs.get("smoke_test", False),
+            "n_trials": kwargs.get("n_trials", 10)
+        }
+
+        return self._execute_engine(
+            challenge_data=challenge_data,
+            engine_config=engine_config,
+            patience_level="high",
+            arch_overrides=kwargs.get("arch_overrides"),
+            dataset_override=kwargs.get("dataset"),
+            progress_callback=progress_callback
+        )
+
+    def _run_demo(self, progress_callback: Optional[Callable], **kwargs):
+        challenge_id = kwargs.get("challenge_id", "quick_comparison")
+        challenge_data = self.challenge_registry.get_challenge_by_id(challenge_id)
+        if not challenge_data:
+            raise ValueError(f"Challenge with ID '{challenge_id}' not found")
+
+        if kwargs.get("models"):
+            challenge_data['models'] = kwargs.get("models")
+
+        engine_config = {"smoke_test": kwargs.get("smoke_test", False)}
+
+        return self._execute_engine(
+            challenge_data=challenge_data,
+            engine_config=engine_config,
+            patience_level="high",
+            arch_overrides=kwargs.get("arch_overrides"),
+            dataset_override=kwargs.get("dataset"),
+            progress_callback=progress_callback
+        )
+
+
+    def _create_challenge_config(self, challenge_data: Dict[str, Any], smoke_test: bool, dataset_override: Optional[str] = None) -> ChallengeConfig:
         dataset_info = challenge_data.get("dataset", {})
-        if isinstance(dataset_info, str):
+
+        if dataset_override:
+            dataset_name = dataset_override
+        elif isinstance(dataset_info, str):
             dataset_name = dataset_info
         else:
             dataset_name = dataset_info.get("dataset", "synthetic")
@@ -92,15 +143,34 @@ class ScientificModelRunner:
             difficulty=ChallengeLevel.INTERMEDIATE
         )
 
-    def _load_algorithms(self, algorithm_names: List[str]) -> List[AlgorithmConfig]:
-        """Load algorithm configurations."""
+    def _load_algorithms(self, algorithm_names: List[str], arch_overrides: Optional[str] = None) -> List[AlgorithmConfig]:
+        """Load algorithm configurations, applying overrides if provided."""
+        import json
+
+        overrides = {}
+        if arch_overrides:
+            try:
+                overrides = json.loads(arch_overrides)
+            except json.JSONDecodeError:
+                console.print(f"[bold red]Error: Invalid JSON in arch-overrides: {arch_overrides}[/bold red]")
+                overrides = {}
+
         algorithms = []
         for name in algorithm_names:
-            model_data = self.model_configs.get(name)
+            model_data = self.model_configs.get(name, {}).copy()
             if not model_data:
                 console.print(f"[yellow]⚠️  Model '{name}' not found in registry[/yellow]")
                 continue
             
+            # Deep merge overrides
+            if overrides:
+                # A simple update is not enough for nested dictionaries (like 'arch')
+                for key, value in overrides.items():
+                    if isinstance(value, dict) and isinstance(model_data.get(key), dict):
+                        model_data[key].update(value)
+                    else:
+                        model_data[key] = value
+
             alg_config = AlgorithmConfig(
                 name=name,
                 algorithm_class=model_data['algorithm_class'],

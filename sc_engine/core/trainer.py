@@ -284,13 +284,15 @@ class Trainer:
                 final_metrics = metrics
                 final_metrics['avg_epoch_time'] = avg_epoch_time
 
+        log_history = []
         if logger:
+            log_history = logger.get_log_history()
             logger.finish()
         if dist.is_initialized():
             dist.destroy_process_group()
 
         self._send_progress('end_training', {'final_metrics': final_metrics})
-        return final_metrics
+        return final_metrics, log_history
 
     def _send_progress(self, event_type: str, data: Dict = None):
         """Send progress update via callback if available."""

@@ -2,11 +2,13 @@ import yaml
 import os
 from typing import Dict, Any
 from rich.console import Console
+from pydantic import ValidationError
+from .schemas import ChallengeConfigSchema, ModelConfigSchema
 
 console = Console()
 
 class ConfigManager:
-    """Manages loading of configuration files."""
+    """Manages loading and validation of configuration files."""
 
     def __init__(self, config_dir: str = 'config'):
         self.config_dir = config_dir
@@ -23,13 +25,22 @@ class ConfigManager:
             console.print(f"[red]Error parsing YAML file at {path}: {e}[/red]")
             return {}
 
-    def load_challenge_configs(self) -> Dict[str, Any]:
-        """Loads the main challenge configuration file."""
+    def load_challenge_configs(self) -> ChallengeConfigSchema:
+        """Loads and validates the main challenge configuration file."""
         path = os.path.join(self.config_dir, 'challenge_config.yaml')
-        return self._load_yaml(path)
+        raw_data = self._load_yaml(path)
+        if not raw_data:
+            raise ValueError("Challenge config is empty or could not be loaded.")
 
-    def load_model_configs(self) -> Dict[str, Any]:
-        """Loads all model configurations from the 'models' directory."""
+        try:
+            return ChallengeConfigSchema.parse_obj(raw_data)
+        except ValidationError as e:
+            console.print(f"[bold red]Error validating challenge config '{path}':[/bold red]")
+            console.print(e)
+            raise ValueError("Challenge configuration validation failed.") from e
+
+    def load_model_configs(self) -> Dict[str, ModelConfigSchema]:
+        """Loads and validates all model configurations from the 'models' directory."""
         models_dir = os.path.join(self.config_dir, 'models')
         model_configs = {}
         if not os.path.isdir(models_dir):
@@ -38,9 +49,16 @@ class ConfigManager:
         for filename in os.listdir(models_dir):
             if filename.endswith((".yaml", ".yml")):
                 path = os.path.join(models_dir, filename)
-                config = self._load_yaml(path)
-                if config and 'name' in config:
-                    model_configs[config['name']] = config
+                config_data = self._load_yaml(path)
+                if config_data and 'name' in config_data:
+                    try:
+                        validated_config = ModelConfigSchema.parse_obj(config_data)
+                        model_configs[validated_config.name] = validated_config
+                    except ValidationError as e:
+                        console.print(f"[bold red]Error validating model config '{filename}':[/bold red]")
+                        console.print(e)
+                        # Decide if one bad config should stop everything. For now, we'll skip it.
+                        continue
         return model_configs
 
     def load_search_spaces(self) -> Dict[str, Any]:

@@ -1,5 +1,42 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
+
+
+class DatasetSchema(BaseModel):
+    """Pydantic schema for a dataset entry."""
+    dataset: str
+
+
+class ChallengeSchema(BaseModel):
+    """Pydantic schema for a single challenge configuration."""
+    name: str
+    id: str
+    description: str
+    difficulty: str
+    hardware: str
+    duration: str
+    dataset: DatasetSchema
+    models: List[str]
+    patience_level: str
+    optimization: bool
+    scientific_question: Optional[str] = None
+    hypothesis_space: Optional[List[str]] = None
+
+
+class ChallengeConfigSchema(BaseModel):
+    """Pydantic schema for the main challenge configuration file."""
+    challenges: List[ChallengeSchema]
+
+
+class ModelConfigSchema(BaseModel):
+    """Pydantic schema for a model's configuration file."""
+    name: str
+    algorithm_class: str
+    base_arch_config: Optional[str] = None
+    search_space_config: Optional[str] = None
+    theoretical_advantages: List[str]
+    theoretical_limitations: List[str]
+
 
 class InsightConfigSchema(BaseModel):
     """Pydantic schema for validating the insight generator configuration."""

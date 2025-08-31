@@ -8,6 +8,7 @@ from .screens.testing import TestingScreen
 from .screens.dataset_management import DatasetManagementScreen
 from .screens.demo import DemoScreen
 from .screens.discovery_dashboard import DiscoveryDashboard
+from .screens.run_comparison import RunComparisonScreen
 from .screens.progress import ProgressScreen
 
 class HRMApp(App):
@@ -25,6 +26,8 @@ class HRMApp(App):
                 yield DemoScreen()
             with TabPane("Discovery Dashboard", id="discovery-dashboard"):
                 yield DiscoveryDashboard()
+            with TabPane("Run Comparison", id="run-comparison"):
+                yield RunComparisonScreen()
             with TabPane("Evaluation", id="evaluation"):
                 yield EvaluationScreen()
             with TabPane("Optimization", id="optimization"):

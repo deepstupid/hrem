@@ -44,6 +44,10 @@ class LocalLogger:
     def finish(self):
         pass
 
+    def get_log_history(self) -> List[Dict[str, Any]]:
+        """Returns the accumulated log data."""
+        return self.log_data
+
 
 @dataclass
 class TrainState:

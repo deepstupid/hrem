@@ -77,14 +77,11 @@ class DemoScreen(Static):
         if event.select.id == "challenge_select":
             challenge_id = event.value
             challenge = self.challenge_registry.get_challenge_by_id(challenge_id)
+            container = self.query_one("#algorithm_selection_container")
+            container.remove_children()
             if challenge:
-                container = self.query_one("#algorithm_selection_container")
-                # Clear previous checkboxes
-                for checkbox in container.query(Checkbox):
-                    checkbox.remove()
-                # Add new checkboxes
                 for model in challenge.get('models', []):
-                    container.mount(Checkbox(model, id=f"alg_{model}"))
+                    container.mount(Checkbox(model, id=f"alg_{model}", value=True))
 
     @work(exclusive=True, thread=True)
     def run_demo(self) -> None:
@@ -128,30 +125,49 @@ class DemoScreen(Static):
         elif event == 'start_algorithm':
             self.current_algorithm = data.get('algorithm', '')
             self.log_messages = f"Running algorithm: {self.current_algorithm}"
-        elif event == 'end_algorithm':
-            metrics = data.get('metrics', {})
-            if 'hrm' in self.current_algorithm.lower():
-                self.hrm_metrics = metrics
-            else:
-                self.hrem_metrics = metrics
-        elif event == 'trainer:train_batch':
+        elif event in ['end_algorithm', 'trainer:train_batch']:
+            self._update_metrics(data)
+        elif event == 'insights_generated':
+            self._update_insights(data)
+
+    def _update_metrics(self, data: dict) -> None:
+        """Update model-specific metrics based on the current algorithm."""
+        metrics = data.get('metrics', {})
+        if not self.current_algorithm:
+            return
+
+        # Determine which reactive property to update
+        if 'hrm' in self.current_algorithm.lower():
+            self.hrm_metrics = metrics
+        elif 'hrem' in self.current_algorithm.lower():
+            self.hrem_metrics = metrics
+
+        # Update progress bar for training batches
+        if data.get('event') == 'trainer:train_batch':
             step = data.get('step', 0)
             total_steps = data.get('total_steps', 1)
             self.phase_progress = step / total_steps
-            metrics = data.get('metrics', {})
-            if 'hrm' in self.current_algorithm.lower():
-                self.hrm_metrics = metrics
-            else:
-                self.hrem_metrics = metrics
-        elif event == 'insights_generated':
-            insights_data = data.get('insights', [])
-            markdown_text = ""
-            for insight in insights_data:
-                markdown_text += f"**{insight.type.upper()}** (Confidence: {insight.confidence:.2f})\n"
-                for implication in insight.implications:
-                    markdown_text += f"- {implication}\n"
-                markdown_text += "\n"
-            self.insights = markdown_text
+
+    def _update_insights(self, data: dict) -> None:
+        """Format and display scientific insights."""
+        insights_data = data.get('insights', [])
+        markdown_text = ""
+        for insight in insights_data:
+            markdown_text += f"**{insight.type.upper()}** (Confidence: {insight.confidence:.2f})\n"
+            for implication in insight.implications:
+                markdown_text += f"- {implication}\n"
+            markdown_text += "\n"
+        self.insights = markdown_text
+
+    def _update_metrics_table(self, table_id: str, metrics: dict) -> None:
+        """Helper to update a DataTable with new metrics."""
+        if self.is_mounted:
+            table = self.query_one(f"#{table_id}", DataTable)
+            table.clear()
+            for key, value in metrics.items():
+                # Ensure value is a string for display
+                display_value = f"{value:.4f}" if isinstance(value, float) else str(value)
+                table.add_row(key, display_value)
 
     def watch_log_messages(self, messages: str) -> None:
         """Update the log widget when log_messages changes."""
@@ -169,19 +185,11 @@ class DemoScreen(Static):
 
     def watch_hrm_metrics(self, metrics: dict) -> None:
         """Update the HRM metrics table."""
-        if self.is_mounted:
-            table = self.query_one("#hrm_metrics_table", DataTable)
-            table.clear()
-            for key, value in metrics.items():
-                table.add_row(key, str(value))
+        self._update_metrics_table("hrm_metrics_table", metrics)
 
     def watch_hrem_metrics(self, metrics: dict) -> None:
         """Update the HREM metrics table."""
-        if self.is_mounted:
-            table = self.query_one("#hrem_metrics_table", DataTable)
-            table.clear()
-            for key, value in metrics.items():
-                table.add_row(key, str(value))
+        self._update_metrics_table("hrem_metrics_table", metrics)
 
     def watch_insights(self, insights: str) -> None:
         """Update the insights markdown widget."""

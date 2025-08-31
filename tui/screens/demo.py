@@ -2,11 +2,12 @@
 
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll, Horizontal
-from textual.widgets import Static, Button, Log, ProgressBar, DataTable, Markdown
+from textual.widgets import Static, Button, Log, ProgressBar, DataTable, Markdown, Select, Checkbox
 from textual.reactive import reactive
 from textual._work_decorator import work
 
 from sc_engine.core.model_runner import ScientificModelRunner
+from sc_engine.core.challenge_registry import ChallengeRegistry
 
 class DemoScreen(Static):
     """The main screen for running pre-configured demo challenges."""
@@ -19,14 +20,23 @@ class DemoScreen(Static):
     current_algorithm = reactive("")
     insights = reactive("")
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.challenge_registry = ChallengeRegistry()
+
     def compose(self) -> ComposeResult:
         """Create child widgets for the demo screen."""
+        challenges = self.challenge_registry.get_all_challenges()
+        challenge_options = [(c['name'], c['id']) for c in challenges]
+
         yield VerticalScroll(
             Static("🚀 HRM vs HREM Demonstration", classes="header"),
             Horizontal(
+                Select(challenge_options, id="challenge_select", prompt="Select a Challenge"),
                 Button("Start Demo", id="start_demo", variant="success"),
                 classes="button_container"
             ),
+            VerticalScroll(id="algorithm_selection_container"),
             Static("---", classes="divider"),
             Log(id="log", classes="log_view", auto_scroll=True),
             Static("---", classes="divider"),
@@ -62,11 +72,43 @@ class DemoScreen(Static):
             self.query_one("#start_demo", Button).disabled = True
             self.run_demo()
 
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle the challenge selection change."""
+        if event.select.id == "challenge_select":
+            challenge_id = event.value
+            challenge = self.challenge_registry.get_challenge_by_id(challenge_id)
+            if challenge:
+                container = self.query_one("#algorithm_selection_container")
+                # Clear previous checkboxes
+                for checkbox in container.query(Checkbox):
+                    checkbox.remove()
+                # Add new checkboxes
+                for model in challenge.get('models', []):
+                    container.mount(Checkbox(model, id=f"alg_{model}"))
+
     @work(exclusive=True, thread=True)
     def run_demo(self) -> None:
         """Run the demo in a background thread."""
+        challenge_select = self.query_one("#challenge_select", Select)
+        challenge_id = challenge_select.value
+
+        if not challenge_id:
+            self.call_from_thread(self.query_one("#log", Log).write_line, "Please select a challenge first.")
+            self.query_one("#start_demo", Button).disabled = False
+            return
+
+        selected_models = []
+        for checkbox in self.query(Checkbox):
+            if checkbox.value:
+                selected_models.append(str(checkbox.label))
+
+        if not selected_models:
+            self.call_from_thread(self.query_one("#log", Log).write_line, "Please select at least one algorithm.")
+            self.query_one("#start_demo", Button).disabled = False
+            return
+
         runner = ScientificModelRunner()
-        runner.run(run_type='demo', progress_callback=self._handle_progress)
+        runner.run(run_type='demo', challenge_id=challenge_id, models=selected_models, progress_callback=self._handle_progress)
 
     def _handle_progress(self, payload: dict) -> None:
         """Handle progress updates from the scientific engine."""

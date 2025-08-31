@@ -2,6 +2,7 @@ from typing import Dict, Any, List, Optional, Callable
 from .config import ChallengeConfig, AlgorithmConfig, PatienceBudget
 from .engine import ScientificDiscoveryEngine, DiscoveryResults
 from .config_manager import ConfigManager
+from .challenge_registry import ChallengeRegistry
 from rich.console import Console
 
 console = Console()
@@ -11,7 +12,7 @@ class ScientificModelRunner:
 
     def __init__(self, config_dir: str = 'config'):
         self.config_manager = ConfigManager(config_dir)
-        self.challenge_configs = self.config_manager.load_challenge_configs()
+        self.challenge_registry = ChallengeRegistry()
         self.model_configs = self.config_manager.load_model_configs()
         self.search_spaces = self.config_manager.load_search_spaces()
 
@@ -22,19 +23,19 @@ class ScientificModelRunner:
         Args:
             run_type: The type of run to execute. Can be 'comparison', 'optimization', or 'demo'.
             progress_callback: An optional callback for reporting progress.
-            **kwargs: Additional arguments for the run, such as 'challenge_id', 'smoke_test', etc.
+            **kwargs: Additional arguments for the run, such as 'challenge_id', 'smoke_test', 'models', etc.
         """
-        challenge_id = kwargs.get("challenge_id", "synthetic_sort")
+        challenge_id = kwargs.get("challenge_id", "quick_comparison")
         smoke_test = kwargs.get("smoke_test", False)
+        models = kwargs.get("models", None)
 
-        challenge_data = None
-        for challenge in self.challenge_configs.get("challenges", []):
-            if challenge.get("id") == challenge_id:
-                challenge_data = challenge
-                break
+        challenge_data = self.challenge_registry.get_challenge_by_id(challenge_id)
 
         if not challenge_data:
             raise ValueError(f"Challenge with ID '{challenge_id}' not found")
+
+        if models:
+            challenge_data['models'] = models
 
         engine_config = {"smoke_test": smoke_test}
         patience_level = "medium"

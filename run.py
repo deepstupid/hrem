@@ -71,9 +71,10 @@ def optimize(challenge: str, model_to_optimize: str, n_trials: int, smoke_test: 
         console.print(traceback.format_exc())
 
 @cli.command()
-@click.option("--challenge", type=str, default="synthetic_sort", help="Challenge ID to run for the demo.")
+@click.option("--challenge", type=str, default="quick_comparison", help="Challenge ID to run for the demo.")
 @click.option("--smoke-test", is_flag=True, default=False, help="Run in smoke test mode.")
-def demo(challenge: str, smoke_test: bool):
+@click.option("--model", type=str, multiple=True, help="Model to run. Can be specified multiple times.")
+def demo(challenge: str, smoke_test: bool, model: list[str]):
     """Run a non-interactive, scripted demonstration of a full workflow."""
     console.print(f"[bold blue]🎬 Starting Demo for Challenge: {challenge}[/bold blue]")
 
@@ -82,7 +83,8 @@ def demo(challenge: str, smoke_test: bool):
         results = runner.run(
             run_type="demo",
             challenge_id=challenge,
-            smoke_test=smoke_test
+            smoke_test=smoke_test,
+            models=list(model) if model else None
         )
         console.print("[green]✅ Demo completed successfully![/green]")
 

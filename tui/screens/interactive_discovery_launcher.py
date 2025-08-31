@@ -3,7 +3,7 @@ from textual.widgets import Static, Input, Button
 from textual.containers import Vertical
 from textual.message import Message
 
-class InteractiveDiscoveryScreen(Static):
+class InteractiveDiscoveryLauncherScreen(Static):
     """A screen to configure and launch interactive discovery runs."""
 
     class StartRun(Message):

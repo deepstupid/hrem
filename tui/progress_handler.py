@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from textual.message import MessageTarget
+from textual.types import MessageTarget
 
 from sc_engine.core.progress_handler import ProgressHandler
 from tui.messages import EngineEvent

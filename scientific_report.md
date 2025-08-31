@@ -2,6 +2,15 @@
 
 **Algorithms Compared:** `HRM`, `HREM`
 
+## 📈 Final Metrics Summary
+
+| Algorithm |
+|---|
+| HRM (Optimized) |
+| HREM (Optimized) |
+
+
+---
 ## 🌟 Executive Summary
 
 **Warning:** One or more models encountered failures during the run. See the Failure Analysis section for details.

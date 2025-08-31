@@ -29,6 +29,7 @@ class RefactoringTests(unittest.TestCase):
         training_config_adamw = {"optimizer": "AdamW", "optimizer_eps": 1e-5, "puzzle_emb_weight_decay": 1.0, "weight_decay": 1.0, "beta1": 0.9, "beta2": 0.95, "puzzle_emb_lr": 1e-4, "lr": 1e-4, "epochs": 1, "global_batch_size": 32}
         model_config_adamw = base_arch_config.copy()
         model_config_adamw['algorithm_class'] = "sc_engine.plugins.algorithms.hrem.HREMAlgorithm"
+        model_config_adamw['base_arch_config'] = "hrem_v1"
 
 
         hrem_algo_adamw = HREMAlgorithm(model_config_adamw, training_config_adamw)
@@ -41,6 +42,7 @@ class RefactoringTests(unittest.TestCase):
         training_config_adam = {"optimizer": "Adam", "optimizer_eps": 1e-8, "puzzle_emb_weight_decay": 1.0, "weight_decay": 1.0, "beta1": 0.9, "beta2": 0.95, "puzzle_emb_lr": 1e-4, "lr": 1e-4, "epochs": 1, "global_batch_size": 32}
         model_config_adam = base_arch_config.copy()
         model_config_adam['algorithm_class'] = "sc_engine.plugins.algorithms.hrem.HREMAlgorithm"
+        model_config_adam['base_arch_config'] = "hrem_v1"
 
         hrem_algo_adam = HREMAlgorithm(model_config_adam, training_config_adam)
         hrem_algo_adam.initialize_train_state(train_metadata, world_size=1, rank=0)

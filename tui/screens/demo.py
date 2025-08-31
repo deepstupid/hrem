@@ -8,6 +8,7 @@ from textual._work_decorator import work
 
 from sc_engine.core.model_runner import ScientificModelRunner
 from sc_engine.core.challenge_registry import ChallengeRegistry
+from sc_engine.core.config_manager import ConfigManager
 
 class DemoScreen(Static):
     """The main screen for running pre-configured demo challenges."""
@@ -22,12 +23,12 @@ class DemoScreen(Static):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.challenge_registry = ChallengeRegistry()
+        self.challenge_registry = ChallengeRegistry(ConfigManager())
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the demo screen."""
         challenges = self.challenge_registry.get_all_challenges()
-        challenge_options = [(c['name'], c['id']) for c in challenges]
+        challenge_options = [(c.name, c.id) for c in challenges]
 
         yield VerticalScroll(
             Static("🚀 HRM vs HREM Demonstration", classes="header"),
@@ -80,7 +81,7 @@ class DemoScreen(Static):
             container = self.query_one("#algorithm_selection_container")
             container.remove_children()
             if challenge:
-                for model in challenge.get('models', []):
+                for model in challenge.models:
                     container.mount(Checkbox(model, id=f"alg_{model}", value=True))
 
     @work(exclusive=True, thread=True)

@@ -62,8 +62,18 @@ class TestConfigManager(unittest.TestCase):
         mock_isdir.return_value = True
         mock_listdir.return_value = ['hrm.yaml', 'hrem.yaml']
         mock_yaml_load.side_effect = [
-            {'name': 'HRM', 'algorithm_class': 'HRMAlgorithm'},
-            {'name': 'HREM', 'algorithm_class': 'HREMAlgorithm'}
+            {
+                'name': 'HRM',
+                'algorithm_class': 'HRMAlgorithm',
+                'theoretical_advantages': [],
+                'theoretical_limitations': []
+            },
+            {
+                'name': 'HREM',
+                'algorithm_class': 'HREMAlgorithm',
+                'theoretical_advantages': [],
+                'theoretical_limitations': []
+            }
         ]
 
         config_manager = ConfigManager()
@@ -74,19 +84,34 @@ class TestConfigManager(unittest.TestCase):
         # Assert
         self.assertIn('HRM', model_configs)
         self.assertIn('HREM', model_configs)
-        self.assertEqual(model_configs['HRM']['algorithm_class'], 'HRMAlgorithm')
-        self.assertEqual(model_configs['HREM']['algorithm_class'], 'HREMAlgorithm')
+        self.assertEqual(model_configs['HRM'].algorithm_class, 'HRMAlgorithm')
+        self.assertEqual(model_configs['HREM'].algorithm_class, 'HREMAlgorithm')
 
     @patch('builtins.open', new_callable=mock_open)
     @patch('yaml.safe_load')
     def test_load_challenge_configs(self, mock_yaml_load, mock_open):
         # Arrange
-        mock_yaml_load.return_value = {'challenge1': {'name': 'Challenge One'}}
+        mock_yaml_load.return_value = {
+            "challenges": [
+                {
+                    "name": "Test Challenge",
+                    "id": "test_challenge",
+                    "description": "A test challenge.",
+                    "difficulty": "EASY",
+                    "hardware": "Low",
+                    "duration": "1 min",
+                    "dataset": {"dataset": "test_dataset"},
+                    "models": ["HRM"],
+                    "patience_level": "low",
+                    "optimization": False
+                }
+            ]
+        }
         config_manager = ConfigManager()
 
         # Act
         challenge_configs = config_manager.load_challenge_configs()
 
         # Assert
-        self.assertIn('challenge1', challenge_configs)
-        self.assertEqual(challenge_configs['challenge1']['name'], 'Challenge One')
+        self.assertEqual(len(challenge_configs.challenges), 1)
+        self.assertEqual(challenge_configs.challenges[0].name, 'Test Challenge')

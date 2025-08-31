@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.'))
 
 from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel, Hypothesis
 from sc_engine.core.engine import ScientificDiscoveryEngine
+from dataset_manager import dataset_manager
 
 def test_full_workflow():
     """Test the full scientific discovery workflow."""
@@ -28,47 +29,34 @@ def test_full_workflow():
         ]
     )
     
+    # Ensure the dataset exists
+    dataset_manager.get_dataset_path("synthetic-duplicate", smoke_test=True)
+
     # Create algorithm configurations
     hrm_config = AlgorithmConfig(
         name="HRM",
         algorithm_class="sc_engine.plugins.algorithms.hrm.HRMAlgorithm",
-            config={
-                    "name": "hrm.act@HierarchicalReasoningModel_ACTV1",
-                "algorithm_class": "sc_engine.plugins.algorithms.hrm.HRMAlgorithm",
-                    "loss": {"name": "models.losses@ACTLossHead", "loss_type": "softmax_cross_entropy"},
-                    "H_cycles": 1, "L_cycles": 1, "H_layers": 1, "L_layers": 1,
-                    "hidden_size": 128, "expansion": 2.0, "num_heads": 4,
-                    "pos_encodings": "rope", "halt_max_steps": 1, "halt_exploration_prob": 0.0,
-                        "puzzle_emb_ndim": 16,
-            },
+        config={
+            "base_arch_config": "hrm_v1",
+            "name": "HRM",
+            "algorithm_class": "sc_engine.plugins.algorithms.hrm.HRMAlgorithm",
+        },
         theoretical_advantages=["computational_efficiency", "simplicity_of_architecture"],
         theoretical_limitations=["limited_memory_capacity", "difficulty_with_long_range_dependencies"],
-        search_space={
-            "hidden_size": {"type": "int", "low": 64, "high": 256},
-            "num_layers": {"type": "int", "low": 1, "high": 3}
-        }
+        search_space={}
     )
     
     hrem_config = AlgorithmConfig(
         name="HREM",
         algorithm_class="sc_engine.plugins.algorithms.hrem.HREMAlgorithm",
-            config={
-                    "name": "hrm.hrem@HREM",
-                "algorithm_class": "sc_engine.plugins.algorithms.hrem.HREMAlgorithm",
-                    "loss": {"name": "models.losses@ACTLossHead", "loss_type": "softmax_cross_entropy"},
-                    "H_cycles": 1, "L_cycles": 1, "H_layers": 1, "L_layers": 1,
-                    "hidden_size": 128, "expansion": 2.0, "num_heads": 4,
-                    "pos_encodings": "rope", "halt_max_steps": 1, "halt_exploration_prob": 0.0,
-                    "use_memory": True,
-                        "puzzle_emb_ndim": 16,
-            },
+        config={
+            "base_arch_config": "hrem_v1",
+            "name": "HREM",
+            "algorithm_class": "sc_engine.plugins.algorithms.hrem.HREMAlgorithm",
+        },
         theoretical_advantages=["large_memory_capacity", "efficient_information_retrieval", "scalable_to_long_sequences"],
         theoretical_limitations=["computational_overhead", "complexity_of_implementation"],
-        search_space={
-            "memory_size": {"type": "int", "low": 32, "high": 128},
-            "top_k_retrieval": {"type": "int", "low": 3, "high": 10},
-            "num_memory_layers": {"type": "int", "low": 2, "high": 5}
-        }
+        search_space={}
     )
     
     algorithms = [hrm_config, hrem_config]
@@ -77,9 +65,8 @@ def test_full_workflow():
     patience_budget = PatienceBudget(level="low")
     
     # Initialize the engine
-    engine = ScientificDiscoveryEngine(challenge, algorithms, config={"n_trials": 1})
+    engine = ScientificDiscoveryEngine(challenge, algorithms, config={"n_trials": 1, "smoke_test": True})
     engine.default_training_config['epochs'] = 1
-    engine.default_training_config['smoke_test'] = True
     
     # Execute the discovery session
     results = engine.execute_discovery_session(patience_budget)

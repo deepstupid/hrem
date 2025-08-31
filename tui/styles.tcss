@@ -110,3 +110,35 @@ DataTable {
 .form Checkbox {
     margin: 0 0 1 0;
 }
+
+/* Interactive Discovery Dashboard Styles */
+#dashboard-container {
+    border: round white;
+    padding: 1;
+}
+
+#selection-panel {
+    width: 30;
+    border-right: heavy white;
+    padding: 0 1;
+}
+
+.model-panel {
+    background: darkblue 20%;
+    padding: 1;
+    border: round white;
+    margin: 0 1;
+}
+
+#comparison-container {
+    height: 1fr;
+}
+
+#insights-panel-container {
+    height: 10;
+    margin-top: 1;
+}
+
+#puzzle-list {
+    height: 1fr;
+}

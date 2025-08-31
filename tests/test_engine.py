@@ -27,7 +27,7 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
     def test_run_hyperparameter_optimization(self, MockTrainer):
         # Arrange
         mock_trainer_instance = MockTrainer.return_value
-        mock_trainer_instance.train_and_evaluate.return_value = {'all/lm_loss': 0.1}
+        mock_trainer_instance.train_and_evaluate.return_value = ({'all/lm_loss': 0.1}, [])
 
         engine = ScientificDiscoveryEngine(
             challenge=self.challenge_config,
@@ -50,7 +50,7 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
     def test_run_evaluation(self, MockTrainer):
         # Arrange
         mock_trainer_instance = MockTrainer.return_value
-        mock_trainer_instance.train_and_evaluate.return_value = {'accuracy': 0.9}
+        mock_trainer_instance.train_and_evaluate.return_value = ({'accuracy': 0.9}, [])
 
         engine = ScientificDiscoveryEngine(
             challenge=self.challenge_config,
@@ -73,8 +73,9 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
         # Assert
         MockTrainer.assert_called_once()
         mock_trainer_instance.train_and_evaluate.assert_called_once()
-        self.assertIn("Test Algorithm", results)
-        self.assertEqual(results["Test Algorithm"]['accuracy'], 0.9)
+        results_dict, _ = results
+        self.assertIn("Test Algorithm", results_dict)
+        self.assertEqual(results_dict["Test Algorithm"]['accuracy'], 0.9)
 
 
 if __name__ == '__main__':

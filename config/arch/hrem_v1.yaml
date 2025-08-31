@@ -1,4 +1,4 @@
-name: hrm.hrem@HREM
+name: models.hrm.hrem@HREM
 use_memory: true
 hidden_size: 16
 expansion: 1.0
@@ -19,5 +19,5 @@ sparse_addressing: true
 use_location_addressing: true
 
 loss:
-  name: losses@ACTLossHead
+  name: models.losses@ACTLossHead
   loss_type: stablemax_cross_entropy

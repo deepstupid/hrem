@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional
 import json
 from rich.console import Console
 
@@ -7,6 +7,7 @@ from .engine import ScientificDiscoveryEngine, DiscoveryResults
 from .config_manager import ConfigManager
 from .challenge_registry import ChallengeRegistry
 from .schemas import ChallengeSchema
+from .progress_handler import ProgressHandler
 
 console = Console()
 
@@ -20,7 +21,7 @@ class ScientificModelRunner:
         self.model_configs = self.config_manager.load_model_configs()
         self.search_spaces = self.config_manager.load_search_spaces()
 
-    def run(self, run_type: str, progress_callback: Optional[Callable] = None, **kwargs):
+    def run(self, run_type: str, progress_handler: Optional[ProgressHandler] = None, **kwargs):
         """Run a discovery session based on the specified run type."""
         run_handlers = {
             "comparison": self._run_comparison,
@@ -30,7 +31,7 @@ class ScientificModelRunner:
         handler = run_handlers.get(run_type)
         if not handler:
             raise ValueError(f"Invalid run type: {run_type}")
-        return handler(progress_callback=progress_callback, **kwargs)
+        return handler(progress_handler=progress_handler, **kwargs)
 
     def _get_challenge_data(self, challenge_id: Optional[str], default_id: Optional[str] = "quick_comparison") -> ChallengeSchema:
         """Fetches and validates challenge data from the registry."""
@@ -43,7 +44,7 @@ class ScientificModelRunner:
             raise ValueError(f"Challenge with ID '{final_challenge_id}' not found")
         return challenge_data
 
-    def _execute_engine(self, challenge_schema: ChallengeSchema, models_to_run: List[str], engine_config: Dict, patience_level: str, arch_overrides: Optional[str], dataset_override: Optional[str], progress_callback: Optional[Callable]):
+    def _execute_engine(self, challenge_schema: ChallengeSchema, models_to_run: List[str], engine_config: Dict, patience_level: str, arch_overrides: Optional[str], dataset_override: Optional[str], progress_handler: Optional[ProgressHandler]):
         """Helper to configure and run the scientific discovery engine."""
         smoke_test = engine_config.get("smoke_test", False)
 
@@ -55,14 +56,14 @@ class ScientificModelRunner:
             challenge=challenge,
             algorithms=algorithms,
             config=engine_config,
-            progress_callback=progress_callback
+            progress_handler=progress_handler
         )
 
         results = engine.execute_discovery_session(patience_budget)
         self._display_results(results)
         return results
 
-    def _run_comparison(self, progress_callback: Optional[Callable], **kwargs):
+    def _run_comparison(self, progress_handler: Optional[ProgressHandler], **kwargs):
         challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id="quick_comparison")
         models_to_run = kwargs.get("models") or challenge_schema.models
 
@@ -76,10 +77,10 @@ class ScientificModelRunner:
             patience_level=patience_level,
             arch_overrides=kwargs.get("arch_overrides"),
             dataset_override=kwargs.get("dataset"),
-            progress_callback=progress_callback
+            progress_handler=progress_handler
         )
 
-    def _run_optimization(self, progress_callback: Optional[Callable], **kwargs):
+    def _run_optimization(self, progress_handler: Optional[ProgressHandler], **kwargs):
         challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id=None)
 
         model_to_optimize = kwargs.get("model_to_optimize")
@@ -99,10 +100,10 @@ class ScientificModelRunner:
             patience_level="high",
             arch_overrides=kwargs.get("arch_overrides"),
             dataset_override=kwargs.get("dataset"),
-            progress_callback=progress_callback
+            progress_handler=progress_handler
         )
 
-    def _run_demo(self, progress_callback: Optional[Callable], **kwargs):
+    def _run_demo(self, progress_handler: Optional[ProgressHandler], **kwargs):
         challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id="quick_comparison")
         models_to_run = kwargs.get("models") or challenge_schema.models
 
@@ -115,7 +116,7 @@ class ScientificModelRunner:
             patience_level="high",
             arch_overrides=kwargs.get("arch_overrides"),
             dataset_override=kwargs.get("dataset"),
-            progress_callback=progress_callback
+            progress_handler=progress_handler
         )
 
 

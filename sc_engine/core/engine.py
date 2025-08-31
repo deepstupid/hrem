@@ -12,6 +12,7 @@ from .report_generator import ScientificReportGenerator
 from .timing_manager import ScientificTimingManager
 from .optimization import HyperparameterOptimizer, OptunaOptimizer
 from .trainer import Trainer
+from .progress_handler import ProgressHandler
 from sc_engine.utils.plotting import generate_performance_plot
 
 console = Console()
@@ -29,7 +30,7 @@ class DiscoveryResults:
 class ScientificDiscoveryEngine:
     """Central orchestrator for scientific exploration process."""
     
-    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], config: Dict[str, Any] = None, progress_callback: Optional[Callable] = None):
+    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], config: Dict[str, Any] = None, progress_handler: Optional[ProgressHandler] = None):
         self.challenge = challenge
         self.algorithms = algorithms
         self.config = config or {}
@@ -39,7 +40,7 @@ class ScientificDiscoveryEngine:
         self.timing_manager = ScientificTimingManager()
         self.results: Dict[str, Any] = {}
         self.optimizer: HyperparameterOptimizer = OptunaOptimizer()
-        self.progress_callback = progress_callback
+        self.progress_handler = progress_handler
         
         with open("config/training/default.yaml", 'r') as f:
             self.default_training_config = yaml.safe_load(f)
@@ -115,7 +116,7 @@ class ScientificDiscoveryEngine:
             training_config = self.default_training_config
             model_config = model_config_fn(alg)
 
-            trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config, progress_callback=self.progress_callback)
+            trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config, progress_handler=self.progress_handler)
             metrics, history = trainer.train_and_evaluate()
             results[result_key_fn(alg)] = metrics
             histories[result_key_fn(alg)] = history
@@ -142,7 +143,7 @@ class ScientificDiscoveryEngine:
                 model_config['arch_overrides'] = hparams
                 run_config = {"study_name": f"{self.challenge.id}_optimize_{alg.name}", "output_dir": "experiments"}
                 training_config = self.default_training_config
-                trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config, progress_callback=self.progress_callback)
+                trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config, progress_handler=self.progress_handler)
                 metrics, _ = trainer.train_and_evaluate()
                 loss = metrics.get('all/lm_loss', float('inf'))
                 self._send_progress('end_trial', {'params': hparams, 'loss': loss})
@@ -199,8 +200,5 @@ class ScientificDiscoveryEngine:
         return insights
 
     def _send_progress(self, event_type: str, data: Dict = None):
-        if self.progress_callback:
-            payload = {'event': event_type}
-            if data:
-                payload.update(data)
-            self.progress_callback(payload)
+        if self.progress_handler:
+            self.progress_handler.on_progress(event_type, data if data is not None else {})

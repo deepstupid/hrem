@@ -3,7 +3,7 @@ import os
 import torch
 import torch.distributed as dist
 import tqdm
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional
 
 from .utils import (
     LocalLogger,
@@ -11,6 +11,7 @@ from .utils import (
     compute_lr,
     TrainState,
 )
+from .progress_handler import ProgressHandler
 from puzzle_dataset import PuzzleDatasetMetadata
 import importlib
 
@@ -20,7 +21,7 @@ class Trainer:
     It is responsible for setting up the environment, building the model,
     and running the training and evaluation loops.
     """
-    def __init__(self, training_config: Dict[str, Any], model_config: Dict[str, Any], data_config: Dict[str, Any], run_config: Dict[str, Any], progress_callback: Optional[Callable] = None):
+    def __init__(self, training_config: Dict[str, Any], model_config: Dict[str, Any], data_config: Dict[str, Any], run_config: Dict[str, Any], progress_handler: Optional[ProgressHandler] = None):
         """
         Initializes the Trainer.
 
@@ -29,13 +30,13 @@ class Trainer:
             model_config: The configuration for the model.
             data_config: The configuration for the data.
             run_config: The configuration for the run.
-            progress_callback: An optional callback for reporting progress.
+            progress_handler: An optional handler for reporting progress.
         """
         self.training_config = training_config
         self.model_config = model_config
         self.data_config = data_config
         self.run_config = run_config
-        self.progress_callback = progress_callback
+        self.progress_handler = progress_handler
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.rank = 0
@@ -295,9 +296,6 @@ class Trainer:
         return final_metrics, log_history
 
     def _send_progress(self, event_type: str, data: Dict = None):
-        """Send progress update via callback if available."""
-        if self.progress_callback:
-            payload = {'event': f'trainer:{event_type}'}
-            if data:
-                payload.update(data)
-            self.progress_callback(payload)
+        """Send progress update via handler if available."""
+        if self.progress_handler:
+            self.progress_handler.on_progress(f'trainer:{event_type}', data if data is not None else {})

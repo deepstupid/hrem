@@ -8,6 +8,7 @@ from .config_manager import ConfigManager
 from .challenge_registry import ChallengeRegistry
 from .schemas import ChallengeSchema
 from .progress_handler import ProgressHandler
+from dataset_manager import dataset_manager
 
 console = Console()
 
@@ -122,8 +123,12 @@ class ScientificModelRunner:
 
     def _create_challenge_config(self, challenge_schema: ChallengeSchema, smoke_test: bool, dataset_override: Optional[str] = None) -> ChallengeConfig:
         dataset_name = dataset_override or challenge_schema.dataset.dataset
+
+        # Use the dataset manager to get the path, which will generate the data if it doesn't exist.
+        dataset_path = dataset_manager.get_dataset_path(dataset_name, smoke_test=smoke_test)
+
         data_config = {
-            "dataset": dataset_name,
+            "dataset": dataset_path,
             "smoke_test": smoke_test,
         }
 

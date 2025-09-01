@@ -3,35 +3,15 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Header, Footer, Static, Button, Checkbox, RadioSet, TabbedContent, TabPane, Log, DataTable, Select
 )
-from textual.worker import Worker, get_current_worker
 from textual import work
-import time
-
-# Import the core engine components
-from sc_engine.core.config_manager import ConfigManager
-from sc_engine.core.challenge_registry import ChallengeRegistry
-from sc_engine.core.model_runner import ScientificModelRunner
-from sc_engine.core.progress_handler import ProgressHandler
 from typing import Dict, Any
 
-# --- TUI-Specific Progress Handler ---
+from sc_engine.core.config_manager import ConfigManager
+from sc_engine.core.challenge_registry import ChallengeRegistry
 
-class TuiProgressHandler(ProgressHandler):
-    """A ProgressHandler that bridges the engine's events to the TUI thread."""
-    def __init__(self):
-        self.worker = get_current_worker()
-
-    def on_progress(self, event_type: str, data: Dict[str, Any]):
-        """Receives progress and posts a message to the TUI, checking for cancellation."""
-        if self.worker.is_cancelled:
-            # A bit of a hack to stop the engine run. A proper solution
-            # would be to have a cancellable token passed through the engine.
-            raise InterruptedError("TUI experiment cancelled by user.")
-
-        # Send the event data back to the main TUI thread for processing
-        self.worker.app.post_message(
-            self.ProgressUpdate(event_type=event_type, data=data)
-        )
+from .worker import (
+    TUIExperimentWorker, ProgressUpdate, ExperimentFinished, WorkerFinished, ErrorOccurred
+)
 
 
 class DiscoveryTUI(App):
@@ -45,22 +25,12 @@ class DiscoveryTUI(App):
         ("q", "quit", "Quit")
     ]
 
-    # --- Custom TUI Messages ---
-    from textual.message import Message
-
-    class ProgressUpdate(Message):
-        """A message to publish progress updates from the worker."""
-        def __init__(self, event_type: str, data: Dict[str, Any]) -> None:
-            self.event_type = event_type
-            self.data = data
-            super().__init__()
-
     # --- App State ---
     def __init__(self):
         super().__init__()
-        self.model_runner = ScientificModelRunner()
         self.current_algorithm = ""
         self.algorithm_steps = {}
+        self.experiment_worker: TUIExperimentWorker | None = None
 
     # --- UI Composition ---
     def compose(self) -> ComposeResult:
@@ -81,7 +51,7 @@ class DiscoveryTUI(App):
                     yield Button("Medium", id="patience_medium")
                     yield Button("High", id="patience_high")
 
-                yield Button("🚀 Start/Restart", id="start-button", variant="primary")
+                yield Button("🚀 Start Experiment", id="start-button", variant="primary")
                 yield Button("⏸️ Pause", id="pause-button", disabled=True)
 
             # Right Pane: Results
@@ -125,44 +95,42 @@ class DiscoveryTUI(App):
 
     # --- Event Handlers & Workers ---
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button press events."""
-        if event.button.id == "start-button":
-            self._start_experiment()
+        """Handle button press events for starting, stopping, and pausing."""
+        button_id = event.button.id
 
-    @work(exclusive=True, thread=True)
-    def run_experiment(self, config: dict) -> None:
-        """Runs the experiment in a background thread."""
-        worker = get_current_worker()
-        if not worker.is_cancelled:
-            try:
-                progress_handler = TuiProgressHandler()
-                self.model_runner.run(
-                    progress_handler=progress_handler,
-                    **config
-                )
-            except InterruptedError:
-                self.post_message(self.ProgressUpdate(event_type="error", data={"message": "Experiment cancelled by user."}))
-            except Exception as e:
-                self.post_message(self.ProgressUpdate(event_type="error", data={"message": f"An unexpected error occurred: {e}"}))
+        if button_id == "start-button":
+            if self.experiment_worker:
+                self.query_one(Log).write_line("[bold yellow]--- Stopping Experiment ---[/bold yellow]")
+                self.experiment_worker.stop()
+                event.button.disabled = True
+            else:
+                self._start_experiment()
+
+        elif button_id == "pause-button":
+            if self.experiment_worker:
+                if self.experiment_worker.is_paused:
+                    self.experiment_worker.resume()
+                    self.query_one(Log).write_line("[bold cyan]--- Resuming Experiment ---[/bold cyan]")
+                    event.button.label = "⏸️ Pause"
+                else:
+                    self.experiment_worker.pause()
+                    self.query_one(Log).write_line("[bold cyan]--- Pausing Experiment ---[/bold cyan]")
+                    event.button.label = "▶️ Resume"
 
     def _start_experiment(self):
         """Gather config and launch the background worker."""
         log = self.query_one(Log)
 
-        # --- Gather Config ---
         challenge = self.query_one(Select).value
         if not challenge:
             log.write_line("[bold red]Please select a challenge.[/bold red]")
             return
 
-        selected_models = [
-            cb.label for cb in self.query(Checkbox) if cb.value
-        ]
+        selected_models = [cb.label for cb in self.query(Checkbox) if cb.value]
         if not selected_models:
             log.write_line("[bold red]Please select at least one model.[/bold red]")
             return
 
-        # Simple way to get patience level from button variant
         patience = "low"
         if self.query_one("#patience_medium").variant == "primary":
             patience = "medium"
@@ -183,8 +151,13 @@ class DiscoveryTUI(App):
         log.write_line(f"[bold]--- Starting Experiment ---[/bold]")
         log.write_line(f"Config: {config}")
 
-        self.run_experiment(config)
+        self.query_one("#start-button").label = "🛑 Stop Experiment"
+        self.query_one("#pause-button").disabled = False
 
+        self.experiment_worker = TUIExperimentWorker(config, self)
+        self.run_worker(self.experiment_worker.run, exclusive=True, thread=True)
+
+    # --- Message Handlers ---
     def on_progress_update(self, message: ProgressUpdate) -> None:
         """Handle progress updates from the worker thread."""
         log = self.query_one(Log)
@@ -195,43 +168,49 @@ class DiscoveryTUI(App):
             self.current_algorithm = data.get('algorithm', '')
             self.algorithm_steps[self.current_algorithm] = 0
             log.write_line(f"[bold blue]--- Running Algorithm: {self.current_algorithm} ---[/bold blue]")
-
         elif event == 'trainer:train_batch':
             metrics = data.get('metrics', {})
             self._update_metrics_table(metrics)
-            # Increment step count for plotting later
             self.algorithm_steps[self.current_algorithm] += 1
-
         elif event == 'end_algorithm':
             log.write_line(f"[bold]--- Finished Algorithm: {self.current_algorithm} ---[/bold]")
             self._update_metrics_table(data.get('final_metrics', {}))
-
-        elif event == 'error':
-            log.write_line(f"[bold red]❌ ERROR: {data.get('message', 'Unknown error')}[/bold red]")
-
-        elif event == 'experiment_finished':
-             log.write_line(f"\n[bold green]🎉 Experiment Finished! 🎉[/bold green]")
-
         else:
-            # For other events, just log them
             log.write_line(f"[dim]{event}[/dim]")
+
+    def on_experiment_finished(self, message: ExperimentFinished) -> None:
+        """Handle the experiment finished message."""
+        self.query_one(Log).write_line(f"\n[bold green]🎉 Experiment Finished! 🎉[/bold green]")
+
+    def on_worker_finished(self, message: WorkerFinished) -> None:
+        """Handle the worker finished message."""
+        self.query_one(Log).write_line("[bold]--- Worker Finished ---[/bold]")
+        self.experiment_worker = None
+        start_button = self.query_one("#start-button")
+        start_button.label = "🚀 Start Experiment"
+        start_button.disabled = False
+        pause_button = self.query_one("#pause-button")
+        pause_button.label = "⏸️ Pause"
+        pause_button.disabled = True
+
+    def on_error_occurred(self, message: ErrorOccurred) -> None:
+        """Handle an error from the worker."""
+        if "cancelled by user" in message.error_message:
+            self.query_one(Log).write_line(f"[bold yellow]⚠️ {message.error_message}[/bold yellow]")
+        else:
+            self.query_one(Log).write_line(f"[bold red]❌ ERROR: {message.error_message}[/bold red]")
 
     def _update_metrics_table(self, metrics: dict):
         """Updates the DataTable with new metrics."""
         if not metrics: return
         table = self.query_one(DataTable)
-
-        # Create a lookup of existing rows by metric name
         current_metrics = {table.get_cell(row_key, "Metric"): row_key for row_key, _ in table.rows.items()}
 
         for key, value in metrics.items():
             display_value = f"{value:.4f}" if isinstance(value, float) else str(value)
-
             if key in current_metrics:
-                # Update existing row
                 table.update_cell(current_metrics[key], "Value", display_value)
             else:
-                # Add new row
                 table.add_row(str(key), display_value, key=str(key))
 
 

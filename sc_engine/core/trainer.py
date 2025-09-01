@@ -106,11 +106,24 @@ class Trainer:
         if self.training_config['smoke_test']:
             self.train_state.total_steps = 1
 
-    def _train_batch(self, batch: Any, global_batch_size: int):
+    def initialize(self):
+        """Initializes the trainer, including data loaders and model."""
+        self.setup_distributed_training()
+        self.prepare_dataloaders()
+        self.build_model()
+        self.train_loader_iter = iter(self.train_loader)
+
+    def train_batch(self):
+        """Trains the model on a single batch of data."""
+        try:
+            _, batch, global_batch_size = next(self.train_loader_iter)
+        except StopIteration:
+            return None, True # Indicates epoch is finished
+
         torch._functorch.config.donated_buffer = False
         self.train_state.step += 1
         if self.train_state.step > self.train_state.total_steps:
-            return None
+            return None, True
 
         device = torch.device(self.device)
         batch = {k: v.to(device) for k, v in batch.items()}
@@ -173,15 +186,16 @@ class Trainer:
                 metric_values = metric_values.cpu().numpy()
                 reduced_metrics = {k: metric_values[i] for i, k in enumerate(metric_keys)}
 
-                count = max(reduced_metrics["count"], 1)
+                count = max(reduced_metrics.get("count", 1), 1)
                 reduced_metrics = {f"train/{k}": v / (global_batch_size if k.endswith("loss") else count) for k, v in reduced_metrics.items()}
 
                 reduced_metrics["train/lr"] = lr_this_step
                 self._send_progress('train_batch', {'metrics': reduced_metrics, 'step': self.train_state.step, 'total_steps': self.train_state.total_steps})
-                return reduced_metrics
-        return None
+                return reduced_metrics, False
+        return None, False
 
-    def _evaluate(self, checkpoint_path: Optional[str]):
+    def evaluate(self, checkpoint_path: Optional[str]):
+        """Runs evaluation on the test set."""
         with torch.inference_mode():
             set_ids = {k: idx for idx, k in enumerate(self.eval_metadata.sets)}
             all_preds = {}
@@ -241,16 +255,12 @@ class Trainer:
                     return reduced_metrics
         return None
 
-    def train_and_evaluate(self) -> Dict[str, Any]:
+    def run_sequential_training(self) -> Dict[str, Any]:
         """
-        Runs the full training and evaluation loop.
-
-        Returns:
-            A dictionary containing the final metrics.
+        Runs the full training and evaluation loop sequentially.
+        This is the original train_and_evaluate functionality.
         """
-        self.setup_distributed_training()
-        self.prepare_dataloaders()
-        self.build_model()
+        self.initialize()
 
         logger = None
         if self.rank == 0:
@@ -260,30 +270,22 @@ class Trainer:
             self._send_progress('start_training', {'total_steps': self.train_state.total_steps})
 
         final_metrics = {}
-        train_epochs_per_iter = self.training_config.get('eval_interval', self.training_config['epochs'])
-        total_iters = self.training_config['epochs'] // train_epochs_per_iter
 
-        for _iter_id in range(total_iters):
-            self.train_state.model.train()
-            iter_start_time = time.time()
+        # The main training loop, broken down by steps
+        for step in range(self.train_state.total_steps):
+            metrics, is_finished = self.train_batch()
+            if is_finished:
+                break
+            if self.rank == 0 and metrics is not None and logger:
+                logger.log(metrics, self.train_state.step)
 
-            for set_name, batch, global_batch_size in self.train_loader:
-                metrics = self._train_batch(batch, global_batch_size)
-                if self.rank == 0 and metrics is not None and logger:
-                    logger.log(metrics, self.train_state.step)
-
-            iter_end_time = time.time()
-            iter_duration = iter_end_time - iter_start_time
-            avg_epoch_time = iter_duration / train_epochs_per_iter if train_epochs_per_iter > 0 else 0
-
-            self.train_state.model.eval()
-            checkpoint_path = self.run_config['output_dir']
-            metrics = self._evaluate(checkpoint_path)
-            if self.rank == 0 and metrics is not None:
-                if logger:
-                    logger.log(metrics, self.train_state.step)
-                final_metrics = metrics
-                final_metrics['avg_epoch_time'] = avg_epoch_time
+        self.train_state.model.eval()
+        checkpoint_path = self.run_config['output_dir']
+        metrics = self.evaluate(checkpoint_path)
+        if self.rank == 0 and metrics is not None:
+            if logger:
+                logger.log(metrics, self.train_state.step)
+            final_metrics = metrics
 
         log_history = []
         if logger:

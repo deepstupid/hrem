@@ -83,6 +83,8 @@ class ScientificDiscoveryEngine:
 
     def _run_baseline_evaluation(self) -> Tuple[Dict[str, Any], Dict[str, List]]:
         self._send_progress('start_phase', {'phase': 'baseline_evaluation'})
+        is_demo_mode = self.config.get("is_demo", False)
+
         results, histories = self._run_evaluation(
             title="⚡ Running Baseline Evaluation",
             phase=ExplorationPhase.BASELINE_EVALUATION,
@@ -90,7 +92,8 @@ class ScientificDiscoveryEngine:
             run_suffix="baseline",
             model_config_fn=lambda alg: alg.config,
             result_key_fn=lambda alg: alg.name,
-            timing_value=0
+            timing_value=0,
+            interleaved=is_demo_mode
         )
         self._send_progress('end_phase', {'phase': 'baseline_evaluation', 'results': results})
         return results, histories
@@ -102,7 +105,8 @@ class ScientificDiscoveryEngine:
                         run_suffix: str,
                         model_config_fn: Callable[[AlgorithmConfig], Dict[str, Any]],
                         result_key_fn: Callable[[AlgorithmConfig], str],
-                        timing_value: int
+                        timing_value: int,
+                        interleaved: bool = False
                         ) -> Tuple[Dict[str, Any], Dict[str, List]]:
         self._send_progress('start_evaluation', {'title': title})
         self.patience_manager.allocate_for_phase(phase, patience_allocation)
@@ -111,8 +115,9 @@ class ScientificDiscoveryEngine:
         histories = {}
         smoke_test = self.config.get("smoke_test", False)
 
-        for i, alg in enumerate(self.algorithms):
-            self._send_progress('start_algorithm', {'algorithm': alg.name, 'progress': (i + 1) / len(self.algorithms)})
+        # --- Initialize Trainers ---
+        trainers = []
+        for alg in self.algorithms:
             run_config = {
                 "study_name": f"{self.challenge.id}_{run_suffix}_{alg.name}",
                 "output_dir": "experiments",
@@ -120,12 +125,41 @@ class ScientificDiscoveryEngine:
             }
             training_config = self.default_training_config
             model_config = model_config_fn(alg)
-
             trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config, progress_handler=self.progress_handler)
-            metrics, history = trainer.train_and_evaluate()
-            results[result_key_fn(alg)] = metrics
-            histories[result_key_fn(alg)] = history
-            self._send_progress('end_algorithm', {'algorithm': alg.name, 'metrics': metrics})
+            trainer.initialize()
+            trainers.append(trainer)
+
+        if interleaved:
+            # --- Interleaved Execution ---
+            num_steps = trainers[0].train_state.total_steps if trainers else 0
+            for step in range(num_steps):
+                for i, trainer in enumerate(trainers):
+                    alg = self.algorithms[i]
+                    self._send_progress('start_algorithm_step', {'algorithm': alg.name, 'step': step})
+                    metrics, is_finished = trainer.train_batch()
+                    if is_finished:
+                        break
+                    # Optionally log metrics per step if needed
+
+            # --- Final Evaluation after Interleaved Training ---
+            for i, trainer in enumerate(trainers):
+                alg = self.algorithms[i]
+                metrics = trainer.evaluate(trainer.run_config['output_dir'])
+                results[result_key_fn(alg)] = metrics
+                # Note: History is not collected per-step in this mode yet
+                histories[result_key_fn(alg)] = []
+                self._send_progress('end_algorithm', {'algorithm': alg.name, 'metrics': metrics})
+
+        else:
+            # --- Sequential Execution ---
+            for i, trainer in enumerate(trainers):
+                alg = self.algorithms[i]
+                self._send_progress('start_algorithm', {'algorithm': alg.name, 'progress': (i + 1) / len(self.algorithms)})
+                # Note: The trainer is already initialized
+                metrics, history = trainer.run_sequential_training()
+                results[result_key_fn(alg)] = metrics
+                histories[result_key_fn(alg)] = history
+                self._send_progress('end_algorithm', {'algorithm': alg.name, 'metrics': metrics})
 
         elapsed_time = time.time() - start_time
         self.patience_manager.update_patience_consumption(elapsed_time, phase)
@@ -161,6 +195,8 @@ class ScientificDiscoveryEngine:
 
     def _run_final_evaluation(self, optimization_results: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, List]]:
         self._send_progress('start_phase', {'phase': 'final_evaluation'})
+        is_demo_mode = self.config.get("is_demo", False)
+
         def model_config_fn(alg):
             config = alg.config.copy()
             config['arch_overrides'] = optimization_results.get(alg.name, {}).get('best_params', {})
@@ -172,7 +208,8 @@ class ScientificDiscoveryEngine:
             run_suffix="final",
             model_config_fn=model_config_fn,
             result_key_fn=lambda alg: f"{alg.name}_optimized",
-            timing_value=1
+            timing_value=1,
+            interleaved=is_demo_mode
         )
         self._send_progress('end_phase', {'phase': 'final_evaluation', 'results': results})
         return results, histories

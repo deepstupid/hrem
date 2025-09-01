@@ -42,7 +42,13 @@ class InvestmentScreen(QWidget):
         # 1. Experiment Type, 2. Challenge, 3. Patience
         self.run_type_combo = QComboBox()
         self.run_type_combo.addItems(["Comparison", "Optimization", "Demo"])
-        self.run_type_combo.setToolTip("Select the type of experiment to run.\n- Comparison: Compare selected algorithms.\n- Optimization: Find the best hyperparameters for one algorithm.")
+        self.run_type_combo.setToolTip(
+            "Select the type of experiment to run.\n"
+            "- Comparison: A standard, sequential run comparing the final performance of selected algorithms.\n"
+            "- Optimization: A run to find the best hyperparameters for a single selected algorithm.\n"
+            "- Demo: A special comparison run where algorithms are executed in an interleaved (step-by-step) fashion. "
+            "This is ideal for live demonstrations to see the models learn side-by-side."
+        )
         self.challenge_combo = QComboBox()
         self.challenge_combo.setToolTip("Select the scientific problem or dataset to address.")
         self.patience_combo = QComboBox()

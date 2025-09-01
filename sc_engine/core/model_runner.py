@@ -108,7 +108,10 @@ class ScientificModelRunner:
         challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id="quick_comparison")
         models_to_run = kwargs.get("models") or challenge_schema.models
 
-        engine_config = {"smoke_test": kwargs.get("smoke_test", False)}
+        engine_config = {
+            "smoke_test": kwargs.get("smoke_test", False),
+            "is_demo": True  # Signal to the engine to use interleaved execution
+        }
 
         return self._execute_engine(
             challenge_schema=challenge_schema,

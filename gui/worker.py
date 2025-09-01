@@ -76,6 +76,8 @@ class ExperimentWorker(QObject):
         except Exception as e:
             # Emit the full error message, including the type of exception
             error_message = f"{type(e).__name__}: {e}"
-            self.error_occurred.emit(error_message)
+            if not self._is_cancelled:
+                self.error_occurred.emit(error_message)
         finally:
-            self.finished.emit()
+            if not self._is_cancelled:
+                self.finished.emit()

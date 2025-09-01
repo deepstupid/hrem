@@ -154,7 +154,7 @@ class DiscoveryScreen(QWidget):
 
     def _on_start_button_clicked(self):
         """Gathers the configuration from the UI and starts the experiment."""
-        if self.worker and self.worker.isRunning():
+        if self.thread and self.thread.isRunning():
             self._cancel_experiment()
 
         selected_models = [name for name, checkbox in self.model_checkboxes.items() if checkbox.isChecked()]
@@ -241,14 +241,16 @@ class DiscoveryScreen(QWidget):
         self.start_button.setEnabled(True)
         self.pause_button.setText("⏸️ Pause")
         self.pause_button.setEnabled(False)
+
+        if self.worker:
+            self.worker.deleteLater()
+            self.worker = None
+
         if self.thread:
             self.thread.quit()
             self.thread.wait()
             self.thread.deleteLater()
             self.thread = None
-        if self.worker:
-            self.worker.deleteLater()
-            self.worker = None
 
     def _setup_event_handlers(self):
         self.event_handlers = {

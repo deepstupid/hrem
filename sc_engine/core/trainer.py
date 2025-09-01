@@ -60,18 +60,8 @@ class Trainer:
         """
         Prepares the training and evaluation dataloaders based on the data config.
         """
-        dataset_name = self.data_config['dataset']
-        task_name = self.data_config.get('synthetic_task', 'default')
-        if dataset_name.startswith("synthetic-"):
-            parts = dataset_name.split('-', 1)
-            dataset_name = parts[0]
-            task_name = parts[1]
-
-        smoke_test = self.run_config.get('smoke_test', False)
-        if smoke_test:
-            data_dir = f"data/{dataset_name}-{task_name}-smoke"
-        else:
-            data_dir = f"data/{dataset_name}-{task_name}-full"
+        # The data_config['dataset'] is now expected to be a full path to the dataset directory.
+        data_dir = self.data_config['dataset']
 
         train_epochs_per_iter = self.training_config.get('eval_interval', self.training_config['epochs'])
 

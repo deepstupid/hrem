@@ -12,13 +12,7 @@ class ChallengeSchema(BaseModel):
     name: str
     id: str
     description: str
-    difficulty: str
-    hardware: str
-    duration: str
     dataset: DatasetSchema
-    models: List[str]
-    patience_level: str
-    optimization: bool
     scientific_question: Optional[str] = None
     hypothesis_space: Optional[List[str]] = None
 

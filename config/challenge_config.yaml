@@ -1,72 +1,31 @@
-# Challenge Configuration for HRM/HREM Demo System
+# Defines the scientific challenges (problems/datasets) available in the system.
+# The new design treats these as fundamental problems, not pre-canned experiments.
 
 challenges:
   - name: "Synthetic Sort"
     id: "synthetic_sort"
-    description: "A simple sorting task for smoke testing."
-    difficulty: "BEGINNER"
-    hardware: "Low"
-    duration: "~15 sec"
+    description: "A simple task to sort a sequence of numbers. Good for testing basic learning and sequential processing."
     dataset:
       dataset: "synthetic-sort"
-    models:
-      - "HRM"
-      - "HREM"
-    patience_level: "low"
-    optimization: false
+    scientific_question: "How well can different architectures learn algorithmic sorting?"
 
-  - name: "Quick Comparison"
-    id: "quick_comparison"
-    description: "A quick comparison between HRM and HREM algorithms."
-    difficulty: "BEGINNER"
-    hardware: "Low"
-    duration: "~30 sec"
+  - name: "Synthetic Reverse"
+    id: "synthetic_reverse"
+    description: "A task to reverse a given sequence. Tests memory and ordered operations."
     dataset:
       dataset: "synthetic-reverse"
-    models: 
-      - "HRM"
-      - "HREM"
-    patience_level: "low"
-    optimization: false
+    scientific_question: "Can models learn to reverse a sequence, and how does performance scale with length?"
 
-  - name: "Basic Optimization"
-    id: "basic_optimization"
-    description: "Basic hyperparameter optimization demo."
-    difficulty: "INTERMEDIATE"
-    hardware: "Medium"
-    duration: "~1 min"
-    dataset:
-      dataset: "synthetic-sort"
-    models:
-      - "HRM"
-      - "HREM"
-    patience_level: "low"
-    optimization: true
-
-  - name: "Advanced Analysis"
-    id: "advanced_analysis"
-    description: "Comprehensive analysis with full optimization."
-    difficulty: "ADVANCED"
-    hardware: "High"
-    duration: "~3 min"
+  - name: "Synthetic Parity"
+    id: "synthetic_parity"
+    description: "A task to determine if the number of '1's in a binary sequence is even or odd. Requires processing the entire sequence."
     dataset:
       dataset: "synthetic-parity"
-    models:
-      - "HRM"
-      - "HREM"
-    patience_level: "medium"
-    optimization: true
+    scientific_question: "Which models are capable of solving the long-dependency parity problem?"
 
   - name: "Synthetic Duplicate"
     id: "synthetic_duplicate"
-    description: "A simple duplication task."
-    difficulty: "BEGINNER"
-    hardware: "Low"
-    duration: "~20 sec"
+    description: "A task to duplicate a given sequence. Tests generation and memory capacity."
     dataset:
       dataset: "synthetic-duplicate"
-    models:
-      - "HRM"
-      - "Random"
-    patience_level: "low"
-    optimization: false
+    scientific_question: "How effectively can models learn to replicate sequences from memory?"

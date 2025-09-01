@@ -1,146 +1,205 @@
 from PyQt6.QtCore import QThread, pyqtSlot, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QTextEdit,
-    QProgressBar,
-    QTableWidget,
-    QHeaderView,
-    QTableWidgetItem,
-    QGroupBox,
-    QHBoxLayout,
-    QPushButton,
-    QMessageBox,
-    QTabWidget,
-    QSplitter,
+    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout, QComboBox,
+    QCheckBox, QPushButton, QLabel, QSlider, QSplitter, QTabWidget,
+    QTextEdit, QTableWidget, QHeaderView, QTableWidgetItem, QMessageBox
 )
 from PyQt6.QtCore import Qt
+from functools import partial
 
 from ..worker import ExperimentWorker
-from ..styles import DANGER_COLOR, WARNING_COLOR
 from ..plot_widget import PlotWidget
+from ..styles import DANGER_COLOR, WARNING_COLOR
+from .optimization_window import OptimizationWindow
+from sc_engine.core.config_manager import ConfigManager
+from sc_engine.core.challenge_registry import ChallengeRegistry
 
 class DiscoveryScreen(QWidget):
     """
-    The 'Run Experiment' screen (Discovery Phase). Displays live progress,
-    logs, metrics, and final insights from the experiment.
+    The main dashboard for running and visualizing scientific experiments.
+    This screen is now the central hub of the application.
     """
-    experiment_concluded = pyqtSignal()
-
     def __init__(self):
         super().__init__()
-        self.thread = None
         self.worker = None
-        self.plot_widget = None
-        self.current_algorithm = ""
+        self.thread = None
         self.metric_tables = {}
         self.algorithm_steps = {}
+        self.current_algorithm = ""
+        self.optimization_windows = []
 
-        # --- Layout ---
-        layout = QVBoxLayout(self)
-        self.setLayout(layout)
+        # --- Main Layout ---
+        main_layout = QHBoxLayout(self)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_layout.addWidget(splitter)
 
-        # --- Top Section (Title & Progress) ---
-        top_layout = QHBoxLayout()
-        self.title_label = QLabel("🔬 Discovery in Progress...")
-        self.title_label.setObjectName("titleLabel")
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setToolTip("Overall experiment progress.")
-        self.progress_bar.setTextVisible(False)
-        top_layout.addWidget(self.title_label)
-        top_layout.addWidget(self.progress_bar)
-        layout.addLayout(top_layout)
+        # --- Left Side: Controls ---
+        controls_widget = QWidget()
+        controls_layout = QVBoxLayout(controls_widget)
+        controls_widget.setMinimumWidth(350)
+        controls_widget.setMaximumWidth(450)
+        self._create_controls(controls_layout)
 
-        # --- Main Content (Splitter) ---
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        layout.addWidget(main_splitter, 1) # Give it stretch factor
+        # --- Right Side: Results ---
+        results_widget = QWidget()
+        results_layout = QVBoxLayout(results_widget)
+        self._create_results_display(results_layout)
 
-        # --- Left Side (Metrics & Logs) ---
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0,0,0,0)
+        splitter.addWidget(controls_widget)
+        splitter.addWidget(results_widget)
+        splitter.setSizes([400, 1000])
 
-        # Metrics
-        metrics_group = QGroupBox("📊 Live Metrics")
-        metrics_layout = QVBoxLayout(metrics_group)
-        self.metrics_tabs = QTabWidget()
-        self.metrics_tabs.setToolTip("Displays live metrics for each running algorithm.")
-        metrics_layout.addWidget(self.metrics_tabs)
+        # --- Populate and Connect ---
+        self._populate_controls()
+        self._connect_signals()
+        self._setup_event_handlers()
 
-        # Logs
-        log_group = QGroupBox("📜 Live Log")
-        log_layout = QVBoxLayout(log_group)
-        self.log_view = QTextEdit()
-        self.log_view.setReadOnly(True)
-        self.log_view.setToolTip("Displays real-time events from the experiment.")
-        log_layout.addWidget(self.log_view)
+        # --- Instant-On ---
+        self.challenge_combo.currentIndexChanged.connect(self._on_start_button_clicked)
+        self._start_default_experiment()
 
-        left_layout.addWidget(metrics_group, 1) # Stretch
-        left_layout.addWidget(log_group, 1) # Stretch
+    def _create_controls(self, layout: QVBoxLayout):
+        """Creates the UI controls for configuring an experiment."""
+        challenge_group = QGroupBox("1. Select Challenge")
+        challenge_form = QFormLayout(challenge_group)
+        self.challenge_combo = QComboBox()
+        self.challenge_combo.setToolTip("Select the scientific problem to investigate.")
+        challenge_form.addRow("Challenge:", self.challenge_combo)
 
-        # --- Right Side (Tabs for Plot and Insights) ---
-        right_tabs = QTabWidget()
+        self.models_group = QGroupBox("2. Select Models to Compare")
+        self.models_layout = QVBoxLayout(self.models_group)
+
+        patience_group = QGroupBox("3. Set Patience Level")
+        patience_form = QFormLayout(patience_group)
+        self.patience_slider = QSlider(Qt.Orientation.Horizontal)
+        self.patience_slider.setRange(0, 2)
+        self.patience_slider.setPageStep(1)
+        self.patience_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.patience_slider.setTickInterval(1)
+        self.patience_label = QLabel("Medium")
+        patience_form.addRow(self.patience_label, self.patience_slider)
+
+        # Action Buttons
+        button_layout = QHBoxLayout()
+        self.start_button = QPushButton("🚀 Start/Restart Experiment")
+        self.start_button.setObjectName("startButton")
+        self.pause_button = QPushButton("⏸️ Pause")
+        self.pause_button.setObjectName("pauseButton")
+        self.pause_button.setEnabled(False)
+        button_layout.addWidget(self.start_button)
+        button_layout.addWidget(self.pause_button)
+
+        layout.addWidget(challenge_group)
+        layout.addWidget(self.models_group)
+        layout.addWidget(patience_group)
+        layout.addStretch()
+        layout.addLayout(button_layout)
+
+    def _create_results_display(self, layout: QVBoxLayout):
+        """Creates the UI elements for displaying experiment results."""
+        self.results_tabs = QTabWidget()
+
         self.plot_widget = PlotWidget()
         self.plot_widget.initialize_plot()
 
-        insights_group = QGroupBox("💡 Scientific Insights")
-        insights_layout = QVBoxLayout(insights_group)
-        self.insights_view = QTextEdit()
-        self.insights_view.setReadOnly(True)
-        self.insights_view.setToolTip("Shows high-level insights and final results after the experiment.")
-        insights_layout.addWidget(self.insights_view)
+        self.metrics_tabs = QTabWidget()
+        self.metrics_tabs.setToolTip("Displays live metrics for each running algorithm.")
 
-        right_tabs.addTab(self.plot_widget, "📈 Performance Plot")
-        right_tabs.addTab(insights_group, "Final Report")
+        self.log_view = QTextEdit()
+        self.log_view.setReadOnly(True)
 
-        main_splitter.addWidget(left_widget)
-        main_splitter.addWidget(right_tabs)
-        main_splitter.setSizes([600, 400]) # Initial size distribution
+        self.results_tabs.addTab(self.plot_widget, "📈 Performance Plot")
+        self.results_tabs.addTab(self.metrics_tabs, "📊 Live Metrics")
+        self.results_tabs.addTab(self.log_view, "📜 Live Log")
 
-        # --- Buttons ---
-        button_layout = QHBoxLayout()
-        self.cancel_button = QPushButton("🛑 Cancel Experiment")
-        self.cancel_button.setObjectName("cancelButton")
-        self.cancel_button.setToolTip("Stops the currently running experiment.")
-        self.conclusion_button = QPushButton("🎉 Finish")
-        self.conclusion_button.setObjectName("finishButton")
-        self.conclusion_button.setToolTip("Return to the setup screen.")
+        layout.addWidget(self.results_tabs)
 
-        button_layout.addStretch()
-        button_layout.addWidget(self.cancel_button)
-        button_layout.addWidget(self.conclusion_button)
-        layout.addLayout(button_layout)
+    def _populate_controls(self):
+        """Populates the control widgets with data from the config files."""
+        self.config_manager = ConfigManager()
+        self.challenge_registry = ChallengeRegistry(self.config_manager)
+        challenges = self.challenge_registry.get_all_challenges()
+        for challenge in challenges:
+            self.challenge_combo.addItem(challenge.name, userData=challenge.id)
 
-        # --- Connections & Event Handlers ---
-        self._setup_event_handlers()
-        self.cancel_button.clicked.connect(self._cancel_experiment)
-        self.conclusion_button.clicked.connect(self.experiment_concluded.emit)
+        model_configs = self.config_manager.load_model_configs()
+        self.model_checkboxes = {}
+        for model_name in sorted(model_configs.keys()):
+            checkbox = QCheckBox(model_name)
+            checkbox.setChecked(True)
+            self.models_layout.addWidget(checkbox)
+            self.model_checkboxes[model_name] = checkbox
+            checkbox.stateChanged.connect(self._on_start_button_clicked)
 
+    def _connect_signals(self):
+        """Connects UI element signals to handler slots."""
+        self.patience_slider.valueChanged.connect(self._update_patience_label)
+        self.patience_slider.valueChanged.connect(self._on_start_button_clicked)
+        self.start_button.clicked.connect(self._on_start_button_clicked)
+        self.pause_button.clicked.connect(self._on_pause_button_clicked)
 
-    def _create_metric_table_widget(self) -> QTableWidget:
-        table = QTableWidget()
-        table.setColumnCount(2)
-        table.setHorizontalHeaderLabels(["Metric", "Value"])
-        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        table.setWordWrap(True)
-        return table
+    def _update_patience_label(self, value):
+        levels = {0: "Low", 1: "Medium", 2: "High"}
+        self.patience_label.setText(levels.get(value, "Medium"))
+
+    def _start_default_experiment(self):
+        """Kicks off a default experiment on application start."""
+        self.challenge_combo.setCurrentIndex(0)
+
+        for name, checkbox in self.model_checkboxes.items():
+            checkbox.setChecked(name in ["HRM", "HREM"])
+
+        self.patience_slider.setValue(0)
+        self._on_start_button_clicked()
+
+    def _on_start_button_clicked(self):
+        """Gathers the configuration from the UI and starts the experiment."""
+        if self.worker and self.worker.isRunning():
+            self._cancel_experiment()
+
+        selected_models = [name for name, checkbox in self.model_checkboxes.items() if checkbox.isChecked()]
+        if not selected_models:
+            QMessageBox.warning(self, "Warning", "Please select at least one model to compare.")
+            return
+
+        patience_map = {0: "low", 1: "medium", 2: "high"}
+
+        config = {
+            "run_type": "comparison",
+            "challenge_id": self.challenge_combo.currentData(),
+            "patience_level": patience_map.get(self.patience_slider.value(), "medium"),
+            "models": selected_models,
+            "smoke_test": False
+        }
+
+        self.start_experiment_run(config)
+
+    def _on_pause_button_clicked(self):
+        """Handles the pause/resume button click."""
+        if not self.worker:
+            return
+
+        if self.worker.is_paused():
+            self.worker.resume()
+            self.pause_button.setText("⏸️ Pause")
+            self.log_view.append("<i>--- Experiment Resumed ---</i>")
+        else:
+            self.worker.pause()
+            self.pause_button.setText("▶️ Resume")
+            self.log_view.append("<i>--- Experiment Paused ---</i>")
 
     def start_experiment_run(self, config: dict):
+        """Sets up and starts the ExperimentWorker thread."""
         self._reset_ui()
         self.log_view.append(f"<b>--- Starting Experiment ---</b>")
         self.log_view.append(f"Config: {config}")
 
         models_to_run = config.get("models", [])
-        if config.get("run_type") == "optimization":
-            models_to_run = [config.get("model_to_optimize")]
-
         for model_name in models_to_run:
             if model_name:
-                table = self._create_metric_table_widget()
+                metric_widget, table = self._create_metric_table_widget(model_name)
                 self.metric_tables[model_name] = table
-                self.metrics_tabs.addTab(table, model_name)
+                self.metrics_tabs.addTab(metric_widget, model_name)
 
         self.thread = QThread()
         self.worker = ExperimentWorker(config)
@@ -153,36 +212,35 @@ class DiscoveryScreen(QWidget):
         self.worker.error_occurred.connect(self.handle_error)
 
         self.thread.start()
+        self.start_button.setText("🛑 Stop Experiment")
+        self.start_button.setEnabled(True)
+        self.pause_button.setEnabled(True)
 
     def _reset_ui(self):
         self.log_view.clear()
-        self.insights_view.clear()
-        self.insights_view.setPlaceholderText("Insights will be generated here as the experiment concludes...")
         self.metrics_tabs.clear()
         self.metric_tables.clear()
         self.algorithm_steps.clear()
-        self.progress_bar.setValue(0)
-        self.title_label.setText("🔬 Discovery in Progress...")
         self.current_algorithm = ""
-        self.conclusion_button.hide()
-        self.cancel_button.show()
-        self.cancel_button.setEnabled(True)
-        self.cancel_button.setText("🛑 Cancel Experiment")
+        self.start_button.setText("🚀 Start/Restart Experiment")
+        self.pause_button.setText("⏸️ Pause")
+        self.pause_button.setEnabled(False)
         if self.plot_widget:
             self.plot_widget.clear_plot()
-
 
     def _cancel_experiment(self):
         if self.worker:
             self.log_view.append("\n<b>--- User requested cancellation ---</b>")
-            self.cancel_button.setEnabled(False)
-            self.cancel_button.setText("🛑 Cancelling...")
+            self.start_button.setEnabled(False)
+            self.start_button.setText("🛑 Stopping...")
             self.worker.stop()
 
     def _handle_thread_finished(self):
         self.log_view.append("<b>--- Worker thread finished ---</b>")
-        self.cancel_button.hide()
-        self.conclusion_button.show()
+        self.start_button.setText("🚀 Start/Restart Experiment")
+        self.start_button.setEnabled(True)
+        self.pause_button.setText("⏸️ Pause")
+        self.pause_button.setEnabled(False)
         if self.thread:
             self.thread.quit()
             self.thread.wait()
@@ -198,8 +256,6 @@ class DiscoveryScreen(QWidget):
             'start_algorithm': self._handle_start_algorithm,
             'trainer:train_batch': self._handle_train_batch,
             'end_algorithm': self._handle_end_algorithm,
-            'insights_generated': self._handle_insights_generated,
-            'patience_update': self._handle_patience_update,
         }
 
     @pyqtSlot(dict)
@@ -212,22 +268,14 @@ class DiscoveryScreen(QWidget):
         else:
             self.log_view.append(f"<font color='gray'><i>Unhandled event: {event}</i></font>")
 
-    def _handle_patience_update(self, data: dict):
-        used = data.get('used', 0)
-        total = data.get('total', 1)
-        if total > 0:
-            self.progress_bar.setValue(int((used / total) * 100))
-
     def _handle_start_phase(self, data: dict):
         phase = data.get('phase', '...').replace('_', ' ').title()
-        self.title_label.setText(f"Phase: {phase}")
         self.log_view.append(f"<b>--- Starting Phase: {phase} ---</b>")
 
     def _handle_start_algorithm(self, data: dict):
         self.current_algorithm = data.get('algorithm', '')
         self.algorithm_steps[self.current_algorithm] = 0
         self.log_view.append(f"<font color='#007BFF'><b>--- Running Algorithm: {self.current_algorithm} ---</b></font>")
-        # Switch to the correct metric tab
         for i in range(self.metrics_tabs.count()):
             if self.metrics_tabs.tabText(i) == self.current_algorithm:
                 self.metrics_tabs.setCurrentIndex(i)
@@ -236,12 +284,10 @@ class DiscoveryScreen(QWidget):
     def _handle_train_batch(self, data: dict):
         metrics = data.get('metrics', {})
         self._update_metrics(metrics)
-
-        # Update plot
         if self.plot_widget and self.current_algorithm:
             step = self.algorithm_steps.get(self.current_algorithm, 0)
             for metric_name, value in metrics.items():
-                if isinstance(value, (int, float)): # Only plot numeric values
+                if isinstance(value, (int, float)):
                     line_name = f"{self.current_algorithm} - {metric_name}"
                     self.plot_widget.add_point(line_name, step, value)
             self.algorithm_steps[self.current_algorithm] = step + 1
@@ -250,83 +296,83 @@ class DiscoveryScreen(QWidget):
         self.log_view.append(f"<b>--- Finished Algorithm: {self.current_algorithm} ---</b>")
         self._update_metrics(data.get('final_metrics', {}))
 
-    def _handle_insights_generated(self, data: dict):
-        self._display_insights(data.get('insights', []))
-
     @pyqtSlot(object)
     def handle_experiment_finished(self, results):
         self.log_view.append("\n<h2><font color='#28A745'>🎉 Experiment Finished! 🎉</font></h2>")
-        self.title_label.setText("✅ Discovery Complete!")
-        self.progress_bar.setValue(100)
-
-        self.insights_view.clear()
-        self.insights_view.append("<h1>Final Report</h1>")
-
-        if hasattr(results, 'insights') and results.insights:
-            self.insights_view.append("<h2>Scientific Insights</h2>")
-            self._display_insights(results.insights)
-        else:
-            self.insights_view.append("<h2>Scientific Insights</h2><i>No significant insights were generated.</i>")
-
-        if hasattr(results, 'metadata') and 'total_elapsed_time' in results.metadata:
-            total_time = results.metadata['total_elapsed_time']
-            self.insights_view.append(f"<h2>Execution Summary</h2>"
-                                      f"<b>Total Duration:</b> {total_time:.2f} seconds")
-
-        if hasattr(results, 'timing_data'):
-            self.insights_view.append("<b>Timing Breakdown:</b><ul>")
-            for phase, data in results.timing_data.items():
-                self.insights_view.append(f"<li><b>{phase.replace('_', ' ').title()}:</b> {data['duration']:.2f}s</li>")
-            self.insights_view.append("</ul>")
-
-        if not hasattr(results, 'insights') and not hasattr(results, 'metadata'):
-            self.insights_view.append("<h2>Raw Results</h2>")
-            self.insights_view.append(f"<pre>{results}</pre>")
 
     @pyqtSlot(str)
     def handle_error(self, error_message: str):
         if "cancelled by user" in error_message:
             self.log_view.append(f"<h3><font color='{WARNING_COLOR}'>🛑 {error_message}</font></h3>")
-            self.title_label.setText("🛑 Experiment Cancelled")
         else:
             full_error_message = f"An unexpected error occurred:\n\n{error_message}"
             self.log_view.append(f"<h3><font color='{DANGER_COLOR}'>❌ {full_error_message}</font></h3>")
-            self.title_label.setText("❌ Error!")
             QMessageBox.critical(self, "Experiment Error", full_error_message)
 
+    def _create_metric_table_widget(self, model_name: str) -> (QWidget, QTableWidget):
+        """Creates a container widget with a metric table and an Optimize button."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        table = QTableWidget()
+        table.setColumnCount(2)
+        table.setHorizontalHeaderLabels(["Metric", "Value"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        table.setWordWrap(True)
+
+        optimize_button = QPushButton(f"🧬 Launch Optimization for {model_name}")
+        optimize_button.clicked.connect(partial(self._launch_optimization_window, model_name))
+
+        layout.addWidget(table)
+        layout.addWidget(optimize_button)
+
+        return container, table
+
+    def _launch_optimization_window(self, model_name: str):
+        """Creates and shows a new window for an optimization run."""
+        self.log_view.append(f"--- Launching optimization for <b>{model_name}</b> ---")
+
+        opt_config = {
+            "run_type": "optimization",
+            "model_to_optimize": model_name,
+            "challenge_id": self.challenge_combo.currentData(),
+            "patience_level": "high", # Optimization should be thorough
+            "n_trials": 50 # A reasonable default
+        }
+
+        # Create and show the new window
+        opt_window = OptimizationWindow(config=opt_config)
+        opt_window.show()
+
+        # Keep a reference to it to prevent garbage collection
+        self.optimization_windows.append(opt_window)
+
     def _update_metrics(self, metrics: dict):
-        if not self.current_algorithm or not metrics:
-            return
+        if not self.current_algorithm or not metrics: return
         table = self.metric_tables.get(self.current_algorithm)
         if not table: return
-
-        # Efficiently update or add new rows
         current_metrics = {table.item(r, 0).text(): r for r in range(table.rowCount())}
         for key, value in metrics.items():
             display_value = f"{value:.4f}" if isinstance(value, float) else str(value)
             if key in current_metrics:
+                # Update existing row
                 table.item(current_metrics[key], 1).setText(display_value)
             else:
+                # Add new row
                 row_pos = table.rowCount()
                 table.insertRow(row_pos)
                 table.setItem(row_pos, 0, QTableWidgetItem(str(key)))
                 table.setItem(row_pos, 1, QTableWidgetItem(display_value))
+                # Add the new metric to our lookup
+                current_metrics[key] = row_pos
 
-
-    def _display_insights(self, insights: list):
-        self.insights_view.append("---")
-        for insight in insights:
-            try:
-                # Using HTML for rich text formatting
-                insight_html = (
-                    f"<b>Insight Type:</b> {insight.type.upper()}<br>"
-                    f"<b>Confidence:</b> {insight.confidence:.2f}<br>"
-                    f"<b>Description:</b> {insight.description}<br>"
-                    f"<b>Implications:</b><ul>"
-                )
-                for imp in insight.implications:
-                    insight_html += f"<li>{imp}</li>"
-                insight_html += "</ul>"
-                self.insights_view.append(insight_html)
-            except AttributeError:
-                self.insights_view.append(f"<pre>{insight}</pre>")
+    def closeEvent(self, event):
+        """Ensure worker is stopped when the window closes."""
+        if self.worker:
+            self.worker.stop()
+        if self.thread:
+            self.thread.quit()
+            self.thread.wait()
+        event.accept()

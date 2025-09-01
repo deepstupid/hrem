@@ -27,55 +27,56 @@ class ScientificModelRunner:
             self.default_training_config = yaml.safe_load(f)
 
     def run(self, run_type: str, progress_handler: Optional[ProgressHandler] = None, **kwargs):
-        """Run a discovery session based on the specified run type."""
-        if run_type not in ["comparison", "optimization", "demo"]:
+        """
+        Run a discovery session based on the specified run type.
+        This is the main entry point for kicking off an experiment.
+        """
+        if run_type not in ["comparison", "optimization"]:
             raise ValueError(f"Invalid run type: {run_type}")
+
+        # Essential parameters that must be provided by the caller (GUI/CLI)
+        challenge_id = kwargs.get("challenge_id")
+        if not challenge_id:
+            raise ValueError("A 'challenge_id' must be provided.")
+
+        patience_level = kwargs.get("patience_level")
+        if not patience_level:
+            raise ValueError("A 'patience_level' must be provided.")
 
         return self._run_discovery_session(run_type, progress_handler=progress_handler, **kwargs)
 
-    def _get_challenge_data(self, challenge_id: Optional[str], default_id: Optional[str] = "quick_comparison") -> ChallengeSchema:
+    def _get_challenge_data(self, challenge_id: str) -> ChallengeSchema:
         """Fetches and validates challenge data from the registry."""
-        final_challenge_id = challenge_id or default_id
-        if not final_challenge_id:
-            raise ValueError("A challenge ID must be provided for this operation.")
-
-        challenge_data = self.challenge_registry.get_challenge_by_id(final_challenge_id)
+        challenge_data = self.challenge_registry.get_challenge_by_id(challenge_id)
         if not challenge_data:
-            raise ValueError(f"Challenge with ID '{final_challenge_id}' not found")
+            raise ValueError(f"Challenge with ID '{challenge_id}' not found")
         return challenge_data
 
     def _run_discovery_session(self, run_type: str, progress_handler: Optional[ProgressHandler], **kwargs):
         """Helper to configure and run the scientific discovery engine."""
-        # Determine challenge schema
-        default_challenge_id = "quick_comparison" if run_type != "optimization" else None
-        challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id=default_challenge_id)
+        challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"))
 
-        # Determine models to run
+        # Determine models to run based on the run type
         if run_type == "optimization":
             model_to_optimize = kwargs.get("model_to_optimize")
             if not model_to_optimize:
-                raise ValueError("model_to_optimize must be specified for optimization runs")
+                raise ValueError("'model_to_optimize' must be specified for optimization runs.")
             models_to_run = [model_to_optimize]
-        else:
-            models_to_run = kwargs.get("models") or challenge_schema.models
+        else:  # comparison
+            models_to_run = kwargs.get("models")
+            if not models_to_run:
+                raise ValueError("'models' must be specified for comparison runs.")
 
         # Configure engine
         engine_config = {"smoke_test": kwargs.get("smoke_test", False)}
         if run_type == "optimization":
             engine_config["n_trials"] = kwargs.get("n_trials", 10)
-        elif run_type == "demo":
-            engine_config["is_demo"] = True
-
-        # Determine patience level
-        if run_type == "comparison":
-            patience_level = kwargs.get("patience_level", "medium")
-        else:
-            patience_level = "high"
 
         # Common setup
         smoke_test = engine_config.get("smoke_test", False)
         dataset_override = kwargs.get("dataset")
         arch_overrides = kwargs.get("arch_overrides")
+        patience_level = kwargs.get("patience_level") # Already validated in run()
 
         challenge = self._create_challenge_config(challenge_schema, smoke_test, dataset_override=dataset_override)
         algorithms = self._load_algorithms(models_to_run, arch_overrides=arch_overrides)
@@ -95,6 +96,7 @@ class ScientificModelRunner:
 
 
     def _create_challenge_config(self, challenge_schema: ChallengeSchema, smoke_test: bool, dataset_override: Optional[str] = None) -> ChallengeConfig:
+        """Creates the final ChallengeConfig object from the schema."""
         dataset_name = dataset_override or challenge_schema.dataset.dataset
 
         # Use the dataset manager to get the path, which will generate the data if it doesn't exist.
@@ -105,14 +107,15 @@ class ScientificModelRunner:
             "smoke_test": smoke_test,
         }
 
+        # The 'difficulty' field is intentionally omitted here.
+        # It will use the default value specified in the ChallengeConfig dataclass.
         return ChallengeConfig(
             name=challenge_schema.name,
             id=challenge_schema.id,
             description=challenge_schema.description,
             dataset=data_config,
             scientific_question=challenge_schema.scientific_question or "",
-            hypothesis_space=challenge_schema.hypothesis_space or [],
-            difficulty=ChallengeLevel(challenge_schema.difficulty.upper())
+            hypothesis_space=challenge_schema.hypothesis_space or []
         )
 
     def _load_algorithms(self, algorithm_names: List[str], arch_overrides: Optional[str] = None) -> List[AlgorithmConfig]:

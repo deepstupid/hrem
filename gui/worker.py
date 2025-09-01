@@ -14,11 +14,15 @@ class GuiProgressHandler(ProgressHandler):
         self.worker = worker
 
     def on_progress(self, event_type: str, data: Dict[str, Any]):
-        """Receives progress and emits a signal, checking for cancellation."""
+        """Receives progress and emits a signal, checking for cancellation and pause."""
         if self.worker._is_cancelled:
             raise ExperimentCancelledError("Experiment cancelled by user.")
 
-        # The payload for the GUI signal is a dictionary
+        # Pause the execution if requested
+        while self.worker._is_paused:
+            # Sleep in the worker's thread to avoid blocking the GUI
+            self.worker.thread().msleep(100)
+
         payload = {'event': event_type, 'data': data}
         self.worker.progress_updated.emit(payload)
 
@@ -36,10 +40,22 @@ class ExperimentWorker(QObject):
         self.config = config
         self.model_runner = ScientificModelRunner()
         self._is_cancelled = False
+        self._is_paused = False
 
     def stop(self):
         """Signals the worker to stop the experiment."""
         self._is_cancelled = True
+
+    def pause(self):
+        """Signals the worker to pause the experiment."""
+        self._is_paused = True
+
+    def resume(self):
+        """Signals the worker to resume the experiment."""
+        self._is_paused = False
+
+    def is_paused(self):
+        return self._is_paused
 
     def run(self):
         """

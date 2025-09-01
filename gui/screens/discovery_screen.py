@@ -16,7 +16,10 @@ from PyQt6.QtWidgets import (
     QSplitter,
 )
 from PyQt6.QtCore import Qt
+
 from ..worker import ExperimentWorker
+from ..styles import DANGER_COLOR, WARNING_COLOR
+from ..plot_widget import PlotWidget
 
 class DiscoveryScreen(QWidget):
     """
@@ -29,8 +32,10 @@ class DiscoveryScreen(QWidget):
         super().__init__()
         self.thread = None
         self.worker = None
+        self.plot_widget = None
         self.current_algorithm = ""
         self.metric_tables = {}
+        self.algorithm_steps = {}
 
         # --- Layout ---
         layout = QVBoxLayout(self)
@@ -74,7 +79,11 @@ class DiscoveryScreen(QWidget):
         left_layout.addWidget(metrics_group, 1) # Stretch
         left_layout.addWidget(log_group, 1) # Stretch
 
-        # --- Right Side (Insights) ---
+        # --- Right Side (Tabs for Plot and Insights) ---
+        right_tabs = QTabWidget()
+        self.plot_widget = PlotWidget()
+        self.plot_widget.initialize_plot()
+
         insights_group = QGroupBox("💡 Scientific Insights")
         insights_layout = QVBoxLayout(insights_group)
         self.insights_view = QTextEdit()
@@ -82,8 +91,11 @@ class DiscoveryScreen(QWidget):
         self.insights_view.setToolTip("Shows high-level insights and final results after the experiment.")
         insights_layout.addWidget(self.insights_view)
 
+        right_tabs.addTab(self.plot_widget, "📈 Performance Plot")
+        right_tabs.addTab(insights_group, "Final Report")
+
         main_splitter.addWidget(left_widget)
-        main_splitter.addWidget(insights_group)
+        main_splitter.addWidget(right_tabs)
         main_splitter.setSizes([600, 400]) # Initial size distribution
 
         # --- Buttons ---
@@ -148,6 +160,7 @@ class DiscoveryScreen(QWidget):
         self.insights_view.setPlaceholderText("Insights will be generated here as the experiment concludes...")
         self.metrics_tabs.clear()
         self.metric_tables.clear()
+        self.algorithm_steps.clear()
         self.progress_bar.setValue(0)
         self.title_label.setText("🔬 Discovery in Progress...")
         self.current_algorithm = ""
@@ -155,6 +168,8 @@ class DiscoveryScreen(QWidget):
         self.cancel_button.show()
         self.cancel_button.setEnabled(True)
         self.cancel_button.setText("🛑 Cancel Experiment")
+        if self.plot_widget:
+            self.plot_widget.clear_plot()
 
 
     def _cancel_experiment(self):
@@ -210,6 +225,7 @@ class DiscoveryScreen(QWidget):
 
     def _handle_start_algorithm(self, data: dict):
         self.current_algorithm = data.get('algorithm', '')
+        self.algorithm_steps[self.current_algorithm] = 0
         self.log_view.append(f"<font color='#007BFF'><b>--- Running Algorithm: {self.current_algorithm} ---</b></font>")
         # Switch to the correct metric tab
         for i in range(self.metrics_tabs.count()):
@@ -218,7 +234,17 @@ class DiscoveryScreen(QWidget):
                 break
 
     def _handle_train_batch(self, data: dict):
-        self._update_metrics(data.get('metrics', {}))
+        metrics = data.get('metrics', {})
+        self._update_metrics(metrics)
+
+        # Update plot
+        if self.plot_widget and self.current_algorithm:
+            step = self.algorithm_steps.get(self.current_algorithm, 0)
+            for metric_name, value in metrics.items():
+                if isinstance(value, (int, float)): # Only plot numeric values
+                    line_name = f"{self.current_algorithm} - {metric_name}"
+                    self.plot_widget.add_point(line_name, step, value)
+            self.algorithm_steps[self.current_algorithm] = step + 1
 
     def _handle_end_algorithm(self, data: dict):
         self.log_view.append(f"<b>--- Finished Algorithm: {self.current_algorithm} ---</b>")

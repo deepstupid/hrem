@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QStyle,
     QMessageBox,
     QFileDialog,
+    QTabWidget,
 )
 from sc_engine.core.config_manager import ConfigManager
 from sc_engine.core.challenge_registry import ChallengeRegistry
@@ -33,37 +34,53 @@ class InvestmentScreen(QWidget):
         main_layout = QVBoxLayout(self)
         self.setLayout(main_layout)
 
-        # --- Configuration Group ---
-        config_group = QGroupBox("🔬 Experiment Configuration")
-        main_layout.addWidget(config_group)
+        # --- Tabbed Interface ---
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+
+        # --- Setup Tab ---
+        self.setup_tab = QWidget()
+        self.tabs.addTab(self.setup_tab, "🔬 Experiment Setup")
+        setup_layout = QVBoxLayout(self.setup_tab)
+
+        config_group = QGroupBox("Core Configuration")
+        setup_layout.addWidget(config_group)
         form_layout = QFormLayout()
         config_group.setLayout(form_layout)
 
-        # 1. Experiment Type, 2. Challenge, 3. Patience
         self.run_type_combo = QComboBox()
-        self.run_type_combo.addItems(["Comparison", "Optimization", "Demo"])
+        self.run_type_combo.addItems(["Comparison", "Optimization"])
         self.run_type_combo.setToolTip(
             "Select the type of experiment to run.\n"
             "- Comparison: A standard, sequential run comparing the final performance of selected algorithms.\n"
-            "- Optimization: A run to find the best hyperparameters for a single selected algorithm.\n"
-            "- Demo: A special comparison run where algorithms are executed in an interleaved (step-by-step) fashion. "
-            "This is ideal for live demonstrations to see the models learn side-by-side."
+            "- Optimization: A run to find the best hyperparameters for a single selected algorithm."
         )
         self.challenge_combo = QComboBox()
         self.challenge_combo.setToolTip("Select the scientific problem or dataset to address.")
+
         self.patience_combo = QComboBox()
-        self.patience_combo.addItems(["Low", "Medium", "High"])
-        self.patience_combo.setToolTip("Set the computational budget for the experiment.\nHigher patience allows for more thorough exploration.")
+        self.patience_combo.addItem("Quick (~2 mins)", "low")
+        self.patience_combo.addItem("Standard (~10 mins)", "medium")
+        self.patience_combo.addItem("Thorough (~30 mins)", "high")
+        self.patience_combo.setToolTip("Set the computational budget for the experiment.\nThis controls the approximate maximum runtime.")
+
         form_layout.addRow("Experiment Type:", self.run_type_combo)
         form_layout.addRow("Scientific Challenge:", self.challenge_combo)
-        form_layout.addRow("Patience Level:", self.patience_combo)
+        form_layout.addRow("Computational Budget:", self.patience_combo)
+        setup_layout.addStretch()
 
-        # --- Optimization Group (hidden) ---
+        # --- Algorithm Tab ---
+        self.algorithm_tab = QWidget()
+        self.tabs.addTab(self.algorithm_tab, "🤖 Algorithm Configuration")
+        algorithm_layout = QVBoxLayout(self.algorithm_tab)
+
+        # --- Optimization Group (hidden by default) ---
         self.optimization_group = QGroupBox("⚙️ Optimization Parameters")
         self.optimization_group.setToolTip("Configure the hyperparameter optimization process.")
         optimization_layout = QFormLayout()
         self.optimization_group.setLayout(optimization_layout)
-        main_layout.addWidget(self.optimization_group)
+        algorithm_layout.addWidget(self.optimization_group)
+
         self.model_to_optimize_combo = QComboBox()
         self.model_to_optimize_combo.setToolTip("Choose the single algorithm you want to optimize.")
         self.n_trials_spinbox = QSpinBox()
@@ -79,7 +96,8 @@ class InvestmentScreen(QWidget):
         self.models_layout = QVBoxLayout()
         self.models_group.setLayout(self.models_layout)
         self.models_group.setToolTip("Select algorithms to run.")
-        main_layout.addWidget(self.models_group)
+        algorithm_layout.addWidget(self.models_group)
+        algorithm_layout.addStretch()
 
         # --- Action Buttons ---
         action_button_layout = QHBoxLayout()
@@ -120,7 +138,7 @@ class InvestmentScreen(QWidget):
         config = {
             "run_type": self.run_type_combo.currentText(),
             "challenge_name": challenge.name,
-            "patience_level": self.patience_combo.currentText(),
+            "patience_level": self.patience_combo.currentData(),
             "model_to_optimize": self.model_to_optimize_combo.currentText(),
             "n_trials": self.n_trials_spinbox.value(),
             "selected_models": [
@@ -171,8 +189,24 @@ class InvestmentScreen(QWidget):
         # But in PyQt, we can just proceed and set the checks.
 
         # 2. Set simple dropdowns
-        self.run_type_combo.setCurrentText(config["run_type"])
-        self.patience_combo.setCurrentText(config["patience_level"])
+        run_type = config.get("run_type", "Comparison")
+        # Handle old "Demo" value from configs gracefully
+        if run_type == "Demo":
+            run_type = "Comparison"
+        self.run_type_combo.setCurrentText(run_type)
+
+        # Handle patience level for backward compatibility
+        patience_value = config.get("patience_level", "medium")
+        # Map old text values (from old configs) or new data values to the canonical data value
+        patience_map = {
+            "low": "low", "medium": "medium", "high": "high",  # For new configs
+            "Low": "low", "Medium": "medium", "High": "high",  # For old configs with "Low", etc.
+            "Quick (~2 mins)": "low", "Standard (~10 mins)": "medium", "Thorough (~30 mins)": "high" # For old configs with new text
+        }
+        patience_data = patience_map.get(patience_value, "medium")
+        patience_index = self.patience_combo.findData(patience_data)
+        if patience_index != -1:
+            self.patience_combo.setCurrentIndex(patience_index)
 
         # 3. Set optimization params
         self.n_trials_spinbox.setValue(config["n_trials"])
@@ -273,7 +307,7 @@ class InvestmentScreen(QWidget):
         config = {
             "run_type": self.run_type_combo.currentText().lower(),
             "challenge_id": challenge.id,
-            "patience_level": self.patience_combo.currentText().lower(),
+            "patience_level": self.patience_combo.currentData(),
         }
 
         if config["run_type"] == "optimization":

@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QMessageBox,
+    QTabWidget,
 )
 from ..worker import ExperimentWorker, ExperimentCancelledError
 
@@ -26,6 +27,7 @@ class DiscoveryScreen(QWidget):
         self.thread = None
         self.worker = None
         self.current_algorithm = ""
+        self.metric_tables = {}
         self._setup_event_handlers()
 
         # --- Layout ---
@@ -50,14 +52,14 @@ class DiscoveryScreen(QWidget):
         log_group.setLayout(log_layout)
         layout.addWidget(log_group)
 
-        metrics_layout = QHBoxLayout()
-        self.hrm_metrics_table = self._create_metrics_table("HRM Metrics")
-        self.hrm_metrics_table.setToolTip("Displays live metrics for the HRM algorithm.")
-        self.hrem_metrics_table = self._create_metrics_table("HREM Metrics")
-        self.hrem_metrics_table.setToolTip("Displays live metrics for the HREM algorithm.")
-        metrics_layout.addWidget(self.hrm_metrics_table)
-        metrics_layout.addWidget(self.hrem_metrics_table)
-        layout.addLayout(metrics_layout)
+        # --- Metrics Tab ---
+        metrics_group = QGroupBox("📊 Live Metrics")
+        metrics_group.setToolTip("Displays live metrics for each running algorithm.")
+        metrics_layout = QVBoxLayout()
+        self.metrics_tabs = QTabWidget()
+        metrics_layout.addWidget(self.metrics_tabs)
+        metrics_group.setLayout(metrics_layout)
+        layout.addWidget(metrics_group)
 
         # --- Insights ---
         insights_group = QGroupBox("💡 Scientific Insights")
@@ -88,22 +90,31 @@ class DiscoveryScreen(QWidget):
             /* ... (styles remain the same) ... */
         """)
 
-    def _create_metrics_table(self, title: str) -> QGroupBox:
-        group_box = QGroupBox(f"📊 {title}")
-        layout = QVBoxLayout()
+    def _create_metric_table_widget(self) -> QTableWidget:
+        """Creates a standard QTableWidget for displaying metrics."""
         table = QTableWidget()
         table.setColumnCount(2)
         table.setHorizontalHeaderLabels(["Metric", "Value"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(table)
-        group_box.setLayout(layout)
-        group_box.table = table
-        return group_box
+        return table
 
     def start_experiment_run(self, config: dict):
         self.config = config
         self._reset_ui()
         self.log_view.append(f"Starting experiment with config: {config}")
+
+        # --- Create metric tabs for each model ---
+        models_to_run = []
+        if config.get("run_type") == "optimization":
+            models_to_run.append(config.get("model_to_optimize"))
+        else:
+            models_to_run = config.get("models", [])
+
+        for model_name in models_to_run:
+            if model_name:
+                table = self._create_metric_table_widget()
+                self.metric_tables[model_name] = table
+                self.metrics_tabs.addTab(table, model_name)
 
         self.thread = QThread()
         self.worker = ExperimentWorker(config)
@@ -121,8 +132,8 @@ class DiscoveryScreen(QWidget):
     def _reset_ui(self):
         self.log_view.clear()
         self.insights_view.clear()
-        self.hrm_metrics_table.table.setRowCount(0)
-        self.hrem_metrics_table.table.setRowCount(0)
+        self.metrics_tabs.clear()
+        self.metric_tables.clear()
         self.progress_bar.setValue(0)
         self.title_label.setText("🔬 Discovery in Progress...")
         self.current_algorithm = ""
@@ -260,13 +271,13 @@ class DiscoveryScreen(QWidget):
             )
 
     def _update_metrics(self, metrics: dict):
-        table = None
-        if 'hrm' in self.current_algorithm.lower():
-            table = self.hrm_metrics_table.table
-        elif 'hrem' in self.current_algorithm.lower():
-            table = self.hrem_metrics_table.table
+        if not self.current_algorithm or not metrics:
+            return
 
-        if table is None: return
+        table = self.metric_tables.get(self.current_algorithm)
+        if table is None:
+            self.log_view.append(f"Warning: Could not find metric table for algorithm '{self.current_algorithm}'")
+            return
 
         table.setRowCount(len(metrics))
         for row, (key, value) in enumerate(metrics.items()):

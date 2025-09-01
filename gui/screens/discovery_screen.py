@@ -27,6 +27,8 @@ class DiscoveryScreen(QWidget):
         self.algorithm_steps = {}
         self.current_algorithm = ""
         self.optimization_windows = []
+        self.restart_pending = False
+        self.pending_config = None
 
         # --- Main Layout ---
         main_layout = QHBoxLayout(self)
@@ -143,27 +145,45 @@ class DiscoveryScreen(QWidget):
         self.patience_label.setText(levels.get(value, "Medium"))
 
     def _start_default_experiment(self):
-        """Kicks off a default experiment on application start."""
-        self.challenge_combo.setCurrentIndex(0)
+        """
+        Kicks off a default experiment on application start, ensuring that
+        programmatic changes to controls do not trigger multiple experiment runs.
+        """
+        # --- Block Signals ---
+        # Temporarily block signals from controls that trigger the experiment
+        # to prevent a cascade of restarts during initial setup.
+        self.challenge_combo.blockSignals(True)
+        self.patience_slider.blockSignals(True)
+        for checkbox in self.model_checkboxes.values():
+            checkbox.blockSignals(True)
 
+        # --- Set Default Values ---
+        self.challenge_combo.setCurrentIndex(0)
         for name, checkbox in self.model_checkboxes.items():
             checkbox.setChecked(name in ["HRM", "HREM"])
-
         self.patience_slider.setValue(0)
+
+        # --- Unblock Signals ---
+        self.challenge_combo.blockSignals(False)
+        self.patience_slider.blockSignals(False)
+        for checkbox in self.model_checkboxes.values():
+            checkbox.blockSignals(False)
+
+        # --- Start the Experiment ---
+        # Now that the UI is in its default state, trigger the experiment run once.
         self._on_start_button_clicked()
 
     def _on_start_button_clicked(self):
-        """Gathers the configuration from the UI and starts the experiment."""
-        if self.thread and self.thread.isRunning():
-            self._cancel_experiment()
-
+        """
+        Gathers the configuration from the UI and starts or restarts the experiment
+        in a safe, sequential manner.
+        """
         selected_models = [name for name, checkbox in self.model_checkboxes.items() if checkbox.isChecked()]
         if not selected_models:
             QMessageBox.warning(self, "Warning", "Please select at least one model to compare.")
             return
 
         patience_map = {0: "low", 1: "medium", 2: "high"}
-
         config = {
             "run_type": "comparison",
             "challenge_id": self.challenge_combo.currentData(),
@@ -172,7 +192,15 @@ class DiscoveryScreen(QWidget):
             "smoke_test": False
         }
 
-        self.start_experiment_run(config)
+        if self.thread and self.thread.isRunning():
+            # If a thread is running, signal it to stop and schedule a restart.
+            self.pending_config = config
+            self.restart_pending = True
+            self._cancel_experiment()
+            # Do not start a new experiment immediately. Wait for the current one to finish.
+        else:
+            # If no thread is running, start a new experiment directly.
+            self.start_experiment_run(config)
 
     def _on_pause_button_clicked(self):
         """Handles the pause/resume button click."""
@@ -251,6 +279,13 @@ class DiscoveryScreen(QWidget):
             self.thread.wait()
             self.thread.deleteLater()
             self.thread = None
+
+        # If a restart was requested, kick it off now that the old thread is gone.
+        if self.restart_pending:
+            self.log_view.append("<b>--- Auto-restarting with new configuration ---</b>")
+            self.restart_pending = False
+            self.start_experiment_run(self.pending_config)
+            self.pending_config = None
 
     def _setup_event_handlers(self):
         self.event_handlers = {

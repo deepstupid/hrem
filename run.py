@@ -76,13 +76,23 @@ def optimize(challenge: str, model_to_optimize: str, n_trials: int, smoke_test: 
 
 @cli.command()
 def gui():
-    """Launch the PyQt6 Graphical User Interface."""
+    """Launch the (now deprecated) PyQt6 Graphical User Interface."""
     try:
         from gui.main import main as gui_main
         gui_main()
     except ImportError as e:
         console.print(f"[red]GUI Error: {e}[/red]")
         console.print("[yellow]Make sure PyQt6 is installed: pip install PyQt6[/yellow]")
+    except Exception:
+        console.print("[bold red]The PyQt6 GUI is currently non-functional due to system-level dependency issues.[/bold red]")
+        console.print("[yellow]Please use the new TUI interface instead: `python run.py tui`[/yellow]")
+
+@cli.command()
+def tui():
+    """Launch the new Textual User Interface."""
+    from tui.main import DiscoveryTUI
+    app = DiscoveryTUI()
+    app.run()
 
 
 if __name__ == "__main__":

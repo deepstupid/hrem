@@ -1,10 +1,26 @@
 import time
 from PyQt6.QtCore import QObject, pyqtSignal
 from sc_engine.core.model_runner import ScientificModelRunner
+from sc_engine.core.progress_handler import ProgressHandler
+from typing import Dict, Any
 
 class ExperimentCancelledError(Exception):
     """Custom exception for when an experiment is cancelled by the user."""
     pass
+
+class GuiProgressHandler(ProgressHandler):
+    """A ProgressHandler that bridges the engine's events to the GUI."""
+    def __init__(self, worker: 'ExperimentWorker'):
+        self.worker = worker
+
+    def on_progress(self, event_type: str, data: Dict[str, Any]):
+        """Receives progress and emits a signal, checking for cancellation."""
+        if self.worker._is_cancelled:
+            raise ExperimentCancelledError("Experiment cancelled by user.")
+
+        # The payload for the GUI signal is a dictionary
+        payload = {'event': event_type, 'data': data}
+        self.worker.progress_updated.emit(payload)
 
 class ExperimentWorker(QObject):
     """
@@ -30,10 +46,7 @@ class ExperimentWorker(QObject):
         Executes the experiment. This method is meant to be run in a QThread.
         """
         try:
-            def progress_handler(payload: dict):
-                if self._is_cancelled:
-                    raise ExperimentCancelledError("Experiment cancelled by user.")
-                self.progress_updated.emit(payload)
+            progress_handler = GuiProgressHandler(self)
 
             results = self.model_runner.run(
                 progress_handler=progress_handler,
@@ -45,6 +58,8 @@ class ExperimentWorker(QObject):
             # Don't propagate as a full error, just a clean exit
             self.error_occurred.emit(str(e))
         except Exception as e:
-            self.error_occurred.emit(str(e))
+            # Emit the full error message, including the type of exception
+            error_message = f"{type(e).__name__}: {e}"
+            self.error_occurred.emit(error_message)
         finally:
             self.finished.emit()

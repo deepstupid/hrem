@@ -11,6 +11,7 @@ challenges:
       dataset: "synthetic-sort"
     models:
       - "HRM"
+      - "HREM"
     patience_level: "low"
     optimization: false
 

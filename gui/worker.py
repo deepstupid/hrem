@@ -79,5 +79,4 @@ class ExperimentWorker(QObject):
             if not self._is_cancelled:
                 self.error_occurred.emit(error_message)
         finally:
-            if not self._is_cancelled:
-                self.finished.emit()
+            self.finished.emit()

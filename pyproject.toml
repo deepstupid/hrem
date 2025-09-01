@@ -23,3 +23,8 @@ py-modules = ["puzzle_dataset", "dataset_manager"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["sc_engine*", "models*", "dataset*"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
+]

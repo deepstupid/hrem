@@ -18,9 +18,10 @@ textual
 pytest
 click
 scipy
-matplotlib
 scikit-learn
 plotext
 GitPython
 PyYAML==6.0.1
 PyQt6
+pytest-qt
+pyqtgraph

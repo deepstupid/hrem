@@ -33,6 +33,6 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle the user closing the window."""
         # Ensure the worker thread in the dashboard is cleaned up on exit.
-        if self.dashboard_screen and self.dashboard_screen.worker:
-            self.dashboard_screen._cancel_experiment()
+        if self.dashboard_screen:
+            self.dashboard_screen.shutdown()
         event.accept()

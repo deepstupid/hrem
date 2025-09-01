@@ -370,11 +370,24 @@ class DiscoveryScreen(QWidget):
                 # Add the new metric to our lookup
                 current_metrics[key] = row_pos
 
-    def closeEvent(self, event):
-        """Ensure worker is stopped when the window closes."""
-        if self.worker:
-            self.worker.stop()
-        if self.thread:
+    def shutdown(self):
+        """
+        Gracefully shuts down the worker thread. This should be called
+        when the application is closing.
+        """
+        if self.thread and self.thread.isRunning():
+            self.log_view.append("<b>--- Application closing: Shutting down worker thread ---</b>")
+            # Signal the worker to stop its operation
+            if self.worker:
+                self.worker.stop()
+
+            # Ask the thread's event loop to exit
             self.thread.quit()
-            self.thread.wait()
-        event.accept()
+
+            # Wait up to 5 seconds for the thread to finish
+            if not self.thread.wait(5000):
+                self.log_view.append("<font color='red'>Warning: Worker thread did not terminate gracefully. Forcing termination.</font>")
+                self.thread.terminate()
+                self.thread.wait() # Wait again after forceful termination
+            else:
+                self.log_view.append("<b>--- Worker thread shut down successfully ---</b>")

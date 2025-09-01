@@ -13,12 +13,15 @@ from .timing_manager import ScientificTimingManager
 from .optimization import HyperparameterOptimizer, OptunaOptimizer
 from .trainer import Trainer
 from .progress_handler import ProgressHandler
+from .interactive_runner import InteractiveRunner
 import importlib
 import torch
 import numpy as np
 from sc_engine.utils.plotting import generate_performance_plot
 from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig
 from dataset.common import PuzzleDatasetMetadata
+from models.hrm.hrem import HREM
+
 
 console = Console()
 
@@ -35,10 +38,11 @@ class DiscoveryResults:
 class ScientificDiscoveryEngine:
     """Central orchestrator for scientific exploration process."""
     
-    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], config: Dict[str, Any] = None, progress_handler: Optional[ProgressHandler] = None):
+    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], default_training_config: Dict[str, Any], config: Dict[str, Any] = None, progress_handler: Optional[ProgressHandler] = None):
         self.challenge = challenge
         self.algorithms = algorithms
         self.config = config or {}
+        self.default_training_config = default_training_config
         self.patience_manager: Optional[AdaptivePatienceManager] = None
         self.scheduler = DiscoveryAwareScheduler(algorithms, challenge)
         self.insight_generator = ScientificInsightGenerator(challenge, algorithms, self.config.get("insights", "config/insight_config.yaml"))
@@ -46,9 +50,6 @@ class ScientificDiscoveryEngine:
         self.results: Dict[str, Any] = {}
         self.optimizer: HyperparameterOptimizer = OptunaOptimizer()
         self.progress_handler = progress_handler
-        
-        with open("config/training/default.yaml", 'r') as f:
-            self.default_training_config = yaml.safe_load(f)
 
     def execute_discovery_session(self, patience_budget: PatienceBudget) -> DiscoveryResults:
         """Execute a scientifically-driven comparison within patience constraints."""
@@ -63,7 +64,8 @@ class ScientificDiscoveryEngine:
         log_histories = {**baseline_histories, **final_histories}
         plot_path = generate_performance_plot(log_histories) if log_histories else None
 
-        insights = self._generate_insights(final_results, plot_path)
+        report_path = "scientific_report.md"
+        insights = self._generate_insights(final_results, plot_path, report_path)
         
         discovery_results = DiscoveryResults(
             challenge=self.challenge,
@@ -111,60 +113,69 @@ class ScientificDiscoveryEngine:
         self._send_progress('start_evaluation', {'title': title})
         self.patience_manager.allocate_for_phase(phase, patience_allocation)
         start_time = time.time()
-        results = {}
-        histories = {}
-        smoke_test = self.config.get("smoke_test", False)
 
-        # --- Initialize Trainers ---
+        trainers = self._initialize_trainers(run_suffix, model_config_fn)
+
+        if interleaved:
+            results, histories = self._run_interleaved_evaluation(trainers, result_key_fn)
+        else:
+            results, histories = self._run_sequential_evaluation(trainers, result_key_fn)
+
+        elapsed_time = time.time() - start_time
+        self.patience_manager.update_patience_consumption(elapsed_time, phase)
+        self.timing_manager.record_discovery_timing(f"{run_suffix}_evaluation", elapsed_time, timing_value)
+        self._send_progress('end_evaluation', {'title': title, 'results': results})
+        return results, histories
+
+    def _initialize_trainers(self, run_suffix: str, model_config_fn: Callable[[AlgorithmConfig], Dict[str, Any]]) -> List[Trainer]:
+        """Initializes and returns a list of trainers for the current algorithms."""
         trainers = []
+        smoke_test = self.config.get("smoke_test", False)
         for alg in self.algorithms:
             run_config = {
                 "study_name": f"{self.challenge.id}_{run_suffix}_{alg.name}",
                 "output_dir": "experiments",
                 "smoke_test": smoke_test
             }
-            training_config = self.default_training_config
             model_config = model_config_fn(alg)
-            trainer = Trainer(training_config, model_config, self.challenge.dataset, run_config, progress_handler=self.progress_handler)
+            trainer = Trainer(self.default_training_config, model_config, self.challenge.dataset, run_config, progress_handler=self.progress_handler)
             trainer.initialize()
             trainers.append(trainer)
+        return trainers
 
-        if interleaved:
-            # --- Interleaved Execution ---
-            num_steps = trainers[0].train_state.total_steps if trainers else 0
-            for step in range(num_steps):
-                for i, trainer in enumerate(trainers):
-                    alg = self.algorithms[i]
-                    self._send_progress('start_algorithm_step', {'algorithm': alg.name, 'step': step})
-                    metrics, is_finished = trainer.train_batch()
-                    if is_finished:
-                        break
-                    # Optionally log metrics per step if needed
-
-            # --- Final Evaluation after Interleaved Training ---
+    def _run_interleaved_evaluation(self, trainers: List[Trainer], result_key_fn: Callable[[AlgorithmConfig], str]) -> Tuple[Dict[str, Any], Dict[str, List]]:
+        """Runs an interleaved evaluation across all trainers."""
+        results = {}
+        histories = {}
+        num_steps = trainers[0].train_state.total_steps if trainers else 0
+        for step in range(num_steps):
             for i, trainer in enumerate(trainers):
                 alg = self.algorithms[i]
-                metrics = trainer.evaluate(trainer.run_config['output_dir'])
-                results[result_key_fn(alg)] = metrics
-                # Note: History is not collected per-step in this mode yet
-                histories[result_key_fn(alg)] = []
-                self._send_progress('end_algorithm', {'algorithm': alg.name, 'metrics': metrics})
+                self._send_progress('start_algorithm_step', {'algorithm': alg.name, 'step': step})
+                _, is_finished = trainer.train_batch()
+                if is_finished:
+                    break
 
-        else:
-            # --- Sequential Execution ---
-            for i, trainer in enumerate(trainers):
-                alg = self.algorithms[i]
-                self._send_progress('start_algorithm', {'algorithm': alg.name, 'progress': (i + 1) / len(self.algorithms)})
-                # Note: The trainer is already initialized
-                metrics, history = trainer.run_sequential_training()
-                results[result_key_fn(alg)] = metrics
-                histories[result_key_fn(alg)] = history
-                self._send_progress('end_algorithm', {'algorithm': alg.name, 'metrics': metrics})
+        for i, trainer in enumerate(trainers):
+            alg = self.algorithms[i]
+            metrics = trainer.evaluate(trainer.run_config['output_dir'])
+            results[result_key_fn(alg)] = metrics
+            histories[result_key_fn(alg)] = []  # History not collected per-step in this mode
+            self._send_progress('end_algorithm', {'algorithm': alg.name, 'metrics': metrics})
 
-        elapsed_time = time.time() - start_time
-        self.patience_manager.update_patience_consumption(elapsed_time, phase)
-        self.timing_manager.record_discovery_timing(f"{run_suffix}_evaluation", elapsed_time, timing_value)
-        self._send_progress('end_evaluation', {'title': title, 'results': results})
+        return results, histories
+
+    def _run_sequential_evaluation(self, trainers: List[Trainer], result_key_fn: Callable[[AlgorithmConfig], str]) -> Tuple[Dict[str, Any], Dict[str, List]]:
+        """Runs a sequential evaluation for each trainer."""
+        results = {}
+        histories = {}
+        for i, trainer in enumerate(trainers):
+            alg = self.algorithms[i]
+            self._send_progress('start_algorithm', {'algorithm': alg.name, 'progress': (i + 1) / len(self.algorithms)})
+            metrics, history = trainer.run_sequential_training()
+            results[result_key_fn(alg)] = metrics
+            histories[result_key_fn(alg)] = history
+            self._send_progress('end_algorithm', {'algorithm': alg.name, 'metrics': metrics})
         return results, histories
 
     def _run_hyperparameter_optimization(self, baseline_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -214,7 +225,7 @@ class ScientificDiscoveryEngine:
         self._send_progress('end_phase', {'phase': 'final_evaluation', 'results': results})
         return results, histories
     
-    def _generate_insights(self, final_results: Dict[str, Any], plot_path: Optional[str]) -> List[ScientificInsight]:
+    def _generate_insights(self, final_results: Dict[str, Any], plot_path: Optional[str], report_path: str) -> List[ScientificInsight]:
         self._send_progress('start_phase', {'phase': 'insight_generation'})
         allocation = self.patience_manager.allocate_for_phase(ExplorationPhase.INSIGHT_GENERATION, discovery_potential=0.9)
         start_time = time.time()
@@ -233,7 +244,6 @@ class ScientificDiscoveryEngine:
                 plot_path=plot_path
             )
             report_content = report_generator.generate_report(insights)
-            report_path = "scientific_report.md"
             with open(report_path, "w") as f:
                 f.write(report_content)
         else:
@@ -252,6 +262,41 @@ class ScientificDiscoveryEngine:
         console.print(f"Running interactive puzzle {puzzle_index} from {dataset_path}")
 
         # 1. Load the puzzle data
+        puzzle_data, dummy_metadata = self._load_interactive_puzzle_data(dataset_path, puzzle_index)
+
+        # 2. Run models and collect results
+        all_results = {}
+        for algo_config in algorithm_configs:
+            console.print(f"[bold cyan]Running model: {algo_config.name}[/bold cyan]")
+
+            # Use Trainer to build the model correctly
+            trainer = self._initialize_trainer_for_puzzle(algo_config, dummy_metadata)
+            model = trainer.train_state.model
+            is_hrem = isinstance(model.model, HREM)
+
+            runner = InteractiveRunner(model, is_hrem=is_hrem)
+            batch = {k: v.to('cpu') for k, v in puzzle_data.items()}
+            runner.reset(batch)
+
+            step_results = []
+            for i in range(puzzle_data['inputs'].shape[1]):
+                single_step_batch = {
+                    'inputs': batch['inputs'][:, i:i+1],
+                    'labels': batch['labels'][:, i:i+1],
+                    'puzzle_identifiers': batch['puzzle_identifiers']
+                }
+
+                result, metrics = runner.run_step(single_step_batch)
+                result["metrics"] = metrics
+                step_results.append(result)
+
+            all_results[algo_config.name] = step_results
+            console.print(f"Finished running {algo_config.name}. Collected {len(step_results)} steps.")
+
+        return all_results
+
+    def _load_interactive_puzzle_data(self, dataset_path: str, puzzle_index: int) -> Tuple[Dict[str, torch.Tensor], PuzzleDatasetMetadata]:
+        """Loads a single puzzle and creates dummy metadata for it."""
         split = "test"
         set_name = "all"
         dataset_config = PuzzleDatasetConfig(
@@ -272,72 +317,20 @@ class ScientificDiscoveryEngine:
         }
         console.print(f"Loaded puzzle with input shape: {puzzle_data['inputs'].shape}")
 
-        # Create dummy metadata for model initialization
         dummy_metadata = PuzzleDatasetMetadata(
             pad_id=0, ignore_label_id=-1, blank_identifier_id=0,
-            vocab_size=32,  # A reasonable guess
-            seq_len=puzzle_data['inputs'].shape[1],
-            num_puzzle_identifiers=1,
-            total_groups=1,
-            mean_puzzle_examples=1.0,
-            sets=['all']
+            vocab_size=32, seq_len=puzzle_data['inputs'].shape[1],
+            num_puzzle_identifiers=1, total_groups=1,
+            mean_puzzle_examples=1.0, sets=['all']
         )
+        return puzzle_data, dummy_metadata
 
-        # 2. Run models and collect results
-        all_results = {}
-        for algo_config in algorithm_configs:
-            console.print(f"[bold cyan]Running model: {algo_config.name}[/bold cyan]")
+    def _initialize_trainer_for_puzzle(self, algo_config: Any, metadata: PuzzleDatasetMetadata) -> Trainer:
+        """Initializes a trainer instance for a given algorithm and puzzle metadata."""
+        run_config = {"study_name": f"interactive_{algo_config.name}", "output_dir": "experiments"}
+        trainer = Trainer(self.default_training_config, algo_config.config, self.challenge.dataset, run_config, progress_handler=self.progress_handler)
 
-            # Instantiate algorithm and initialize train state to get the model
-            module_path, class_name = algo_config.config['algorithm_class'].rsplit('.', 1)
-            module = importlib.import_module(module_path)
-            algorithm = getattr(module, class_name)(algo_config.config, self.default_training_config)
-            algorithm.initialize_train_state(dummy_metadata, world_size=1, rank=0)
-            model = algorithm.train_state.model
-            model.eval()
-
-            # Prepare batch
-            batch = {k: v.to('cpu') for k, v in puzzle_data.items()}
-
-            from models.hrm.hrem import HREM
-            # Run model step-by-step
-            with torch.inference_mode():
-                is_hrem = isinstance(model.model, HREM)
-                if is_hrem:
-                    carry, mem_states = model.initial_carry(batch)
-                else:
-                    carry = model.initial_carry(batch)
-                    mem_states = {}
-
-                step_results = []
-                for i in range(puzzle_data['inputs'].shape[1]):
-                    single_step_batch = {
-                        'inputs': batch['inputs'][:, i:i+1],
-                        'labels': batch['labels'][:, i:i+1],
-                        'puzzle_identifiers': batch['puzzle_identifiers']
-                    }
-
-                    model_input_carry = (carry, mem_states) if is_hrem else carry
-                    new_carry, _, metrics, preds, _ = model(
-                        return_keys=['logits'],
-                        carry=model_input_carry,
-                        batch=single_step_batch
-                    )
-
-                    if is_hrem:
-                        carry, mem_states = new_carry
-                    else:
-                        carry = new_carry
-
-                    prediction = preds['logits'][:, i, :].argmax(dim=-1)
-                    correct = (prediction == single_step_batch['labels'].squeeze()).item()
-                    step_results.append({
-                        "prediction": prediction.item(),
-                        "correct": correct,
-                        "metrics": {k: v.item() for k, v in metrics.items() if k != 'count'}
-                    })
-
-            all_results[algo_config.name] = step_results
-            console.print(f"Finished running {algo_config.name}. Collected {len(step_results)} steps.")
-
-        return all_results
+        # Manually set metadata and build model, bypassing dataloaders
+        trainer.train_metadata = metadata
+        trainer.build_model()
+        return trainer

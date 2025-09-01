@@ -31,10 +31,14 @@ class TestInteractiveAPI(unittest.TestCase):
         with open("config/demo_config.yaml", 'r') as f:
             demo_config = yaml.safe_load(f)
 
+        with open("config/training/default.yaml", 'r') as f:
+            default_training_config = yaml.safe_load(f)
+
         self.engine = ScientificDiscoveryEngine(
             challenge=self.challenge_config,
             algorithms=self.algorithm_configs,
-            config=demo_config
+            config=demo_config,
+            default_training_config=default_training_config
         )
 
     def test_run_interactive_puzzle_structure(self):

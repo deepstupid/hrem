@@ -1,4 +1,5 @@
 import unittest
+import yaml
 from unittest.mock import MagicMock, patch
 from sc_engine.core.engine import ScientificDiscoveryEngine
 from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel
@@ -29,10 +30,13 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
         mock_trainer_instance = MockTrainer.return_value
         mock_trainer_instance.train_and_evaluate.return_value = ({'all/lm_loss': 0.1}, [])
 
+        with open("config/training/default.yaml", 'r') as f:
+            default_training_config = yaml.safe_load(f)
         engine = ScientificDiscoveryEngine(
             challenge=self.challenge_config,
             algorithms=[self.algorithm_config],
-            config={"n_trials": 5}
+            config={"n_trials": 5},
+            default_training_config=default_training_config
         )
         engine.optimizer = MagicMock(spec=HyperparameterOptimizer)
         engine.patience_manager = MagicMock()
@@ -52,9 +56,12 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
         mock_trainer_instance = MockTrainer.return_value
         mock_trainer_instance.run_sequential_training.return_value = ({'accuracy': 0.9}, [])
 
+        with open("config/training/default.yaml", 'r') as f:
+            default_training_config = yaml.safe_load(f)
         engine = ScientificDiscoveryEngine(
             challenge=self.challenge_config,
-            algorithms=[self.algorithm_config]
+            algorithms=[self.algorithm_config],
+            default_training_config=default_training_config
         )
         engine.patience_manager = MagicMock()
         engine.timing_manager = MagicMock()

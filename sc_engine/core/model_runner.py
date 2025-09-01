@@ -13,6 +13,8 @@ from dataset_manager import dataset_manager
 console = Console()
 
 
+import yaml
+
 class ScientificModelRunner:
     """Runner for discovery-oriented algorithm comparison."""
 
@@ -21,18 +23,15 @@ class ScientificModelRunner:
         self.challenge_registry = ChallengeRegistry(self.config_manager)
         self.model_configs = self.config_manager.load_model_configs()
         self.search_spaces = self.config_manager.load_search_spaces()
+        with open("config/training/default.yaml", 'r') as f:
+            self.default_training_config = yaml.safe_load(f)
 
     def run(self, run_type: str, progress_handler: Optional[ProgressHandler] = None, **kwargs):
         """Run a discovery session based on the specified run type."""
-        run_handlers = {
-            "comparison": self._run_comparison,
-            "optimization": self._run_optimization,
-            "demo": self._run_demo,
-        }
-        handler = run_handlers.get(run_type)
-        if not handler:
+        if run_type not in ["comparison", "optimization", "demo"]:
             raise ValueError(f"Invalid run type: {run_type}")
-        return handler(progress_handler=progress_handler, **kwargs)
+
+        return self._run_discovery_session(run_type, progress_handler=progress_handler, **kwargs)
 
     def _get_challenge_data(self, challenge_id: Optional[str], default_id: Optional[str] = "quick_comparison") -> ChallengeSchema:
         """Fetches and validates challenge data from the registry."""
@@ -45,9 +44,38 @@ class ScientificModelRunner:
             raise ValueError(f"Challenge with ID '{final_challenge_id}' not found")
         return challenge_data
 
-    def _execute_engine(self, challenge_schema: ChallengeSchema, models_to_run: List[str], engine_config: Dict, patience_level: str, arch_overrides: Optional[str], dataset_override: Optional[str], progress_handler: Optional[ProgressHandler]):
+    def _run_discovery_session(self, run_type: str, progress_handler: Optional[ProgressHandler], **kwargs):
         """Helper to configure and run the scientific discovery engine."""
+        # Determine challenge schema
+        default_challenge_id = "quick_comparison" if run_type != "optimization" else None
+        challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id=default_challenge_id)
+
+        # Determine models to run
+        if run_type == "optimization":
+            model_to_optimize = kwargs.get("model_to_optimize")
+            if not model_to_optimize:
+                raise ValueError("model_to_optimize must be specified for optimization runs")
+            models_to_run = [model_to_optimize]
+        else:
+            models_to_run = kwargs.get("models") or challenge_schema.models
+
+        # Configure engine
+        engine_config = {"smoke_test": kwargs.get("smoke_test", False)}
+        if run_type == "optimization":
+            engine_config["n_trials"] = kwargs.get("n_trials", 10)
+        elif run_type == "demo":
+            engine_config["is_demo"] = True
+
+        # Determine patience level
+        if run_type == "comparison":
+            patience_level = kwargs.get("patience_level", "medium")
+        else:
+            patience_level = "high"
+
+        # Common setup
         smoke_test = engine_config.get("smoke_test", False)
+        dataset_override = kwargs.get("dataset")
+        arch_overrides = kwargs.get("arch_overrides")
 
         challenge = self._create_challenge_config(challenge_schema, smoke_test, dataset_override=dataset_override)
         algorithms = self._load_algorithms(models_to_run, arch_overrides=arch_overrides)
@@ -56,6 +84,7 @@ class ScientificModelRunner:
         engine = ScientificDiscoveryEngine(
             challenge=challenge,
             algorithms=algorithms,
+            default_training_config=self.default_training_config,
             config=engine_config,
             progress_handler=progress_handler
         )
@@ -63,65 +92,6 @@ class ScientificModelRunner:
         results = engine.execute_discovery_session(patience_budget)
         self._display_results(results)
         return results
-
-    def _run_comparison(self, progress_handler: Optional[ProgressHandler], **kwargs):
-        challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id="quick_comparison")
-        models_to_run = kwargs.get("models") or challenge_schema.models
-
-        engine_config = {"smoke_test": kwargs.get("smoke_test", False)}
-        patience_level = kwargs.get("patience_level", "medium")
-
-        return self._execute_engine(
-            challenge_schema=challenge_schema,
-            models_to_run=models_to_run,
-            engine_config=engine_config,
-            patience_level=patience_level,
-            arch_overrides=kwargs.get("arch_overrides"),
-            dataset_override=kwargs.get("dataset"),
-            progress_handler=progress_handler
-        )
-
-    def _run_optimization(self, progress_handler: Optional[ProgressHandler], **kwargs):
-        challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id=None)
-
-        model_to_optimize = kwargs.get("model_to_optimize")
-        if not model_to_optimize:
-            raise ValueError("model_to_optimize must be specified for optimization runs")
-        models_to_run = [model_to_optimize]
-
-        engine_config = {
-            "smoke_test": kwargs.get("smoke_test", False),
-            "n_trials": kwargs.get("n_trials", 10)
-        }
-
-        return self._execute_engine(
-            challenge_schema=challenge_schema,
-            models_to_run=models_to_run,
-            engine_config=engine_config,
-            patience_level="high",
-            arch_overrides=kwargs.get("arch_overrides"),
-            dataset_override=kwargs.get("dataset"),
-            progress_handler=progress_handler
-        )
-
-    def _run_demo(self, progress_handler: Optional[ProgressHandler], **kwargs):
-        challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"), default_id="quick_comparison")
-        models_to_run = kwargs.get("models") or challenge_schema.models
-
-        engine_config = {
-            "smoke_test": kwargs.get("smoke_test", False),
-            "is_demo": True  # Signal to the engine to use interleaved execution
-        }
-
-        return self._execute_engine(
-            challenge_schema=challenge_schema,
-            models_to_run=models_to_run,
-            engine_config=engine_config,
-            patience_level="high",
-            arch_overrides=kwargs.get("arch_overrides"),
-            dataset_override=kwargs.get("dataset"),
-            progress_handler=progress_handler
-        )
 
 
     def _create_challenge_config(self, challenge_schema: ChallengeSchema, smoke_test: bool, dataset_override: Optional[str] = None) -> ChallengeConfig:

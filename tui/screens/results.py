@@ -18,6 +18,7 @@ class ResultsScreen(Screen):
         insights: List[Any],
         plot_path: Optional[str],
         report_path: Optional[str],
+        log_histories: Optional[Dict[str, List[Dict[str, Any]]]],
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
@@ -25,6 +26,7 @@ class ResultsScreen(Screen):
         self.insights = insights
         self.plot_path = plot_path
         self.report_path = report_path
+        self.log_histories = log_histories
         super().__init__(name=name, id=id, classes=classes)
 
     def compose(self) -> ComposeResult:
@@ -38,7 +40,7 @@ class ResultsScreen(Screen):
     def on_mount(self) -> None:
         """Populate the insights panel with the results."""
         panel = self.query_one(InsightsPanel)
-        panel.show_results(self.insights, self.plot_path, self.report_path)
+        panel.show_results(self.insights, self.plot_path, self.report_path, self.log_histories)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle the new experiment button."""

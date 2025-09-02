@@ -18,6 +18,7 @@ class RunView(Static):
             with Horizontal(id="run-header"):
                 yield Static("Phase: Not Started", id="phase-tracker")
                 yield Static("Status: Idle", id="status-tracker")
+                yield Static("Step: 0/0", id="step-tracker")
             with Horizontal(id="run-content"):
                 yield MetricsPanel(id="metrics-panel")
                 yield Log(id="live-log", highlight=True, auto_scroll=True)

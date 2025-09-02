@@ -11,7 +11,7 @@ from tui.screens.results import ResultsScreen
 from tui.engine import ExperimentRunner
 from tui.events import (
     LogUpdate, PhaseUpdate, AlgorithmUpdate, ResultsGenerated, ExperimentFinished, ExperimentFailed,
-    PauseExperiment, ResumeExperiment
+    PauseExperiment, ResumeExperiment, LiveMetricUpdate
 )
 
 class DiscoveryScreen(Screen):
@@ -78,7 +78,8 @@ class DiscoveryScreen(Screen):
         results_screen = ResultsScreen(
             insights=message.insights,
             plot_path=message.plot_path,
-            report_path=message.report_path
+            report_path=message.report_path,
+            log_histories=message.log_histories
         )
         self.app.push_screen(results_screen, _reset_on_dismiss)
 
@@ -115,3 +116,8 @@ class DiscoveryScreen(Screen):
         """Updates the metrics panel with new data."""
         if message.metrics:
             self.query_one(MetricsPanel).update_metrics(message.algorithm_name, message.metrics)
+
+    def on_live_metric_update(self, message: LiveMetricUpdate) -> None:
+        """Updates the metrics panel and step tracker with live data from a training batch."""
+        self.query_one(MetricsPanel).update_metrics(message.algorithm_name, message.metrics)
+        self.query_one("#step-tracker").update(f"Step: {message.step}/{message.total_steps}")

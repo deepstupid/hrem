@@ -67,7 +67,7 @@ class ScientificDiscoveryEngine:
         plot_path = generate_performance_plot(log_histories) if log_histories else None
 
         report_path = "scientific_report.md"
-        insights = self._generate_insights(final_results, plot_path, report_path)
+        insights = self._generate_insights(final_results, plot_path, report_path, log_histories)
         
         discovery_results = DiscoveryResults(
             challenge=self.challenge,
@@ -240,7 +240,7 @@ class ScientificDiscoveryEngine:
         self._send_progress('end_phase', {'phase': 'final_evaluation', 'results': results})
         return results, histories
     
-    def _generate_insights(self, final_results: Dict[str, Any], plot_path: Optional[str], report_path: str) -> List[ScientificInsight]:
+    def _generate_insights(self, final_results: Dict[str, Any], plot_path: Optional[str], report_path: str, log_histories: Optional[Dict[str, List[Dict[str, Any]]]]) -> List[ScientificInsight]:
         self._send_progress('start_phase', {'phase': 'insight_generation'})
         allocation = self.patience_manager.allocate_for_phase(ExplorationPhase.INSIGHT_GENERATION, discovery_potential=0.9)
         start_time = time.time()
@@ -251,7 +251,12 @@ class ScientificDiscoveryEngine:
         self.patience_manager.update_patience_consumption(elapsed_time, ExplorationPhase.INSIGHT_GENERATION)
         self.timing_manager.record_discovery_timing("insight_generation", elapsed_time, len(insights))
         if insights:
-            self._send_progress('insights_generated', {'insights': insights})
+            self._send_progress('insights_generated', {
+                'insights': insights,
+                'plot_path': plot_path,
+                'report_path': report_path,
+                'log_histories': log_histories
+            })
             report_generator = ScientificReportGenerator(
                 challenge_name=self.challenge.name,
                 algorithm_names=[alg.name for alg in self.algorithms],

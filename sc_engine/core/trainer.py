@@ -270,7 +270,7 @@ class Trainer:
             if self.control.is_cancelled():
                 self._send_progress('training_cancelled', {'step': step})
                 break
-            self.control.check_pause() # This will block if paused
+            self.control.wait_if_paused() # This will block if paused
 
             metrics, is_finished = self.train_batch()
             if is_finished:

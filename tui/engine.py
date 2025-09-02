@@ -5,13 +5,14 @@ from textual.worker import get_current_worker
 
 from sc_engine.core.progress_handler import ProgressHandler
 from sc_engine.core.model_runner import ScientificModelRunner
-from tui.control import ExperimentControl # This needs to be created
+from tui.control import ExperimentControl
 from .events import (
     ExperimentStarted, ExperimentFinished, ExperimentFailed,
-    LogUpdate, PhaseUpdate, AlgorithmUpdate, OptimizationUpdate, ResultsGenerated
+    LogUpdate, PhaseUpdate, AlgorithmUpdate, OptimizationUpdate, ResultsGenerated,
+    LiveMetricUpdate
 )
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class TUIProgressHandler(ProgressHandler):
     """A progress handler that translates engine events into TUI messages."""
@@ -21,10 +22,9 @@ class TUIProgressHandler(ProgressHandler):
             self.worker = get_current_worker()
             self.app = get_current_app()
         except RuntimeError:
-            # This can happen if not initialized in a worker context.
-            # We'll handle this gracefully, though it shouldn't occur in our design.
             self.worker = None
             self.app = None
+        self.current_algorithm: Optional[str] = None
 
     def on_progress(self, event_type: str, data: Dict[str, Any]):
         """Receives an event and posts a corresponding message to the TUI."""
@@ -39,6 +39,7 @@ class TUIProgressHandler(ProgressHandler):
 
         elif event_type == 'start_algorithm':
             alg = data.get('algorithm', 'Unknown Algorithm')
+            self.current_algorithm = alg
             self.app.post_message(AlgorithmUpdate(algorithm_name=alg, status='running'))
             self.app.post_message(LogUpdate(f"Running algorithm: [bold green]{alg}[/bold green]"))
 
@@ -47,10 +48,16 @@ class TUIProgressHandler(ProgressHandler):
             metrics = data.get('metrics', {})
             self.app.post_message(AlgorithmUpdate(algorithm_name=alg, status='finished', metrics=metrics))
             self.app.post_message(LogUpdate(f"Finished algorithm: [bold green]{alg}[/bold green]"))
+            self.current_algorithm = None
 
         elif event_type == 'trainer:train_batch':
-            # This is a high-frequency event, good for live metrics
-            pass # For now, we'll handle metrics at the end of the algorithm run
+            if self.current_algorithm:
+                self.app.post_message(LiveMetricUpdate(
+                    metrics=data.get('metrics', {}),
+                    step=data.get('step', 0),
+                    total_steps=data.get('total_steps', 0),
+                    algorithm_name=self.current_algorithm
+                ))
 
         elif event_type == 'start_trial':
             # Potentially useful for detailed optimization view
@@ -65,7 +72,8 @@ class TUIProgressHandler(ProgressHandler):
             self.app.post_message(ResultsGenerated(
                 insights=data.get('insights', []),
                 plot_path=data.get('plot_path'),
-                report_path=data.get('report_path')
+                report_path=data.get('report_path'),
+                log_histories=data.get('log_histories')
             ))
             self.app.post_message(LogUpdate("✅ Scientific insights generated.", style="bold green"))
 

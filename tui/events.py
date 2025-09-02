@@ -53,16 +53,26 @@ class OptimizationUpdate(ExperimentEvent):
 
 class ResultsGenerated(ExperimentEvent):
     """Sends the final results (insights, plot path) to the UI."""
-    def __init__(self, insights: List[Any], plot_path: Optional[str], report_path: Optional[str]) -> None:
+    def __init__(self, insights: List[Any], plot_path: Optional[str], report_path: Optional[str], log_histories: Optional[Dict[str, List[Dict[str, Any]]]]) -> None:
         self.insights = insights
         self.plot_path = plot_path
         self.report_path = report_path
+        self.log_histories = log_histories
+        super().__init__()
+
+class LiveMetricUpdate(ExperimentEvent):
+    """Sends live metrics from a training batch to the UI."""
+    def __init__(self, metrics: Dict[str, Any], step: int, total_steps: int, algorithm_name: str) -> None:
+        self.metrics = metrics
+        self.step = step
+        self.total_steps = total_steps
+        self.algorithm_name = algorithm_name
+        super().__init__()
 
 class PauseExperiment(ExperimentEvent):
     """A message to signal the user wants to pause the experiment."""
     pass
 
 class ResumeExperiment(ExperimentEvent):
-    """A message to signal the user wants to resume the experiment."""
+    """A message to signal theuser wants to resume the experiment."""
     pass
-        super().__init__()

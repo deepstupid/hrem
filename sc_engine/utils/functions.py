@@ -10,6 +10,19 @@ def load_model_class(identifier: str):
     except (ImportError, AttributeError) as e:
         raise ImportError(f"Could not import class '{identifier}'") from e
 
+import collections.abc
+
+def deep_merge(d, u):
+    """
+    Deep merge two dictionaries.
+    """
+    for k, v in u.items():
+        if isinstance(v, collections.abc.Mapping):
+            d[k] = deep_merge(d.get(k, {}), v)
+        else:
+            d[k] = v
+    return d
+
 def get_model_source_path(identifier: str, prefix: str = "models."):
     """This function is not used and will be removed."""
     pass

@@ -10,6 +10,7 @@ from .challenge_registry import ChallengeRegistry
 from .interactive_mode_runner import InteractiveModeRunner
 from .schemas import ChallengeSchema
 from .progress_handler import ProgressHandler
+from sc_engine.utils.functions import deep_merge
 from dataset_manager import dataset_manager
 import threading
 
@@ -76,30 +77,46 @@ class ScientificModelRunner:
         """Helper to configure and run the scientific discovery engine."""
         challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"))
 
-        # Determine models to run based on the run type
+        models_to_run = self._determine_models_to_run(run_type, **kwargs)
+        engine_config = self._configure_engine(run_type, **kwargs)
+
+        challenge = self._setup_challenge(challenge_schema, engine_config, **kwargs)
+        algorithms = self._setup_algorithms(models_to_run, **kwargs)
+
+        results = self._run_engine(challenge, algorithms, engine_config, progress_handler, cancel_event, **kwargs)
+
+        self._display_results(results)
+        return results
+
+    def _determine_models_to_run(self, run_type: str, **kwargs) -> List[str]:
         if run_type == "optimization":
             model_to_optimize = kwargs.get("model_to_optimize")
             if not model_to_optimize:
                 raise ValueError("'model_to_optimize' must be specified for optimization runs.")
-            models_to_run = [model_to_optimize]
+            return [model_to_optimize]
         else:  # comparison
             models_to_run = kwargs.get("models")
             if not models_to_run:
                 raise ValueError("'models' must be specified for comparison runs.")
+            return models_to_run
 
-        # Configure engine
+    def _configure_engine(self, run_type: str, **kwargs) -> Dict[str, Any]:
         engine_config = {"smoke_test": kwargs.get("smoke_test", False)}
         if run_type == "optimization":
             engine_config["n_trials"] = kwargs.get("n_trials", 10)
+        return engine_config
 
-        # Common setup
+    def _setup_challenge(self, challenge_schema: ChallengeSchema, engine_config: Dict[str, Any], **kwargs) -> ChallengeConfig:
         smoke_test = engine_config.get("smoke_test", False)
         dataset_override = kwargs.get("dataset")
-        arch_overrides = kwargs.get("arch_overrides")
-        patience_level = kwargs.get("patience_level") # Already validated in run()
+        return self._create_challenge_config(challenge_schema, smoke_test, dataset_override=dataset_override)
 
-        challenge = self._create_challenge_config(challenge_schema, smoke_test, dataset_override=dataset_override)
-        algorithms = self._load_algorithms(models_to_run, arch_overrides=arch_overrides)
+    def _setup_algorithms(self, models_to_run: List[str], **kwargs) -> List[AlgorithmConfig]:
+        arch_overrides = kwargs.get("arch_overrides")
+        return self._load_algorithms(models_to_run, arch_overrides=arch_overrides)
+
+    def _run_engine(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], engine_config: Dict[str, Any], progress_handler: Optional[ProgressHandler], cancel_event: Optional[threading.Event], **kwargs) -> DiscoveryResults:
+        patience_level = kwargs.get("patience_level")
         patience_budget = PatienceBudget(level=patience_level)
 
         engine = ScientificDiscoveryEngine(
@@ -112,10 +129,7 @@ class ScientificModelRunner:
         )
 
         orchestrator = EngineOrchestrator(engine)
-        results = orchestrator.run(patience_budget)
-        self._display_results(results)
-        return results
-
+        return orchestrator.run(patience_budget)
 
     def _create_challenge_config(self, challenge_schema: ChallengeSchema, smoke_test: bool, dataset_override: Optional[str] = None) -> ChallengeConfig:
         """Creates the final ChallengeConfig object from the schema."""
@@ -160,8 +174,7 @@ class ScientificModelRunner:
             model_dict = model_schema.dict()
 
             if overrides:
-                # This is a simple override, for deep merge, a more complex utility would be needed
-                model_dict.update(overrides)
+                deep_merge(model_dict, overrides)
 
             alg_config = AlgorithmConfig(
                 name=model_schema.name,

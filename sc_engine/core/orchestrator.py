@@ -31,20 +31,20 @@ class EngineOrchestrator:
 
     def run(self, patience_budget: PatienceBudget) -> DiscoveryResults:
         """Execute a scientifically-driven comparison within patience constraints."""
-        self.engine._send_progress('start_session', {'challenge': self.engine.challenge.name})
+        self.engine.send_progress('start_session', {'challenge': self.engine.challenge.name})
 
         self.patience_manager = AdaptivePatienceManager(patience_budget, self.engine.timing_manager)
         self.engine.patience_manager = self.patience_manager
 
-        baseline_results, baseline_histories = self.engine._run_baseline_evaluation()
-        optimization_results = self.engine._run_hyperparameter_optimization(baseline_results)
-        final_results, final_histories = self.engine._run_final_evaluation(optimization_results)
+        baseline_results, baseline_histories = self.engine.run_baseline_evaluation()
+        optimization_results = self.engine.run_hyperparameter_optimization(baseline_results)
+        final_results, final_histories = self.engine.run_final_evaluation(optimization_results)
 
         log_histories = {**baseline_histories, **final_histories}
         plot_path = generate_performance_plot(log_histories) if log_histories else None
 
         report_path = "scientific_report.md"
-        insights = self.engine._generate_insights(final_results, plot_path, report_path, log_histories)
+        insights = self.engine.generate_insights(final_results, plot_path, report_path, log_histories)
 
         discovery_results = DiscoveryResults(
             challenge=self.engine.challenge,

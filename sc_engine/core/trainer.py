@@ -113,7 +113,7 @@ class Trainer:
         except StopIteration:
             return None, True # Indicates epoch is finished
 
-        torch._functorch.config.donated_buffer = False
+        # torch._functorch.config.donated_buffer = False # This is deprecated
         self.train_state.step += 1
         if self.train_state.step > self.train_state.total_steps:
             return None, True
@@ -139,38 +139,53 @@ class Trainer:
 
         self.train_state.carry = new_carry
 
-        if use_amp and scaler is not None:
-            scaled_loss = scaler.scale((1 / global_batch_size) * loss)
-            scaled_loss.backward()
-        else:
-            scaled_loss = (1 / global_batch_size) * loss
-            scaled_loss.backward()
-
-        del scaled_loss, loss
-
-        if self.world_size > 1:
-            for param in self.train_state.model.parameters():
-                if param.grad is not None:
-                    dist.all_reduce(param.grad)
-
-        lr_this_step = None
-        for optim, base_lr in zip(self.train_state.optimizers, self.train_state.optimizer_lrs):
-            lr_this_step = compute_lr(base_lr, self.training_config, self.train_state)
-
-            for param_group in optim.param_groups:
-                param_group['lr'] = lr_this_step
-
+        # --- Backpropagation and Optimizer Step ---
+        # Only perform backpropagation if there are optimizers (i.e., the model is trainable)
+        if self.train_state.optimizers:
             if use_amp and scaler is not None:
-                scaler.step(optim)
-                scaler.update()
+                scaled_loss = scaler.scale((1 / global_batch_size) * loss)
+                scaled_loss.backward()
             else:
-                optim.step()
-            optim.zero_grad()
+                scaled_loss = (1 / global_batch_size) * loss
+                scaled_loss.backward()
+
+            del scaled_loss, loss
+
+            if self.world_size > 1:
+                for param in self.train_state.model.parameters():
+                    if param.grad is not None:
+                        dist.all_reduce(param.grad)
+
+            lr_this_step = None
+            for optim, base_lr in zip(self.train_state.optimizers, self.train_state.optimizer_lrs):
+                lr_this_step = compute_lr(base_lr, self.training_config, self.train_state)
+
+                for param_group in optim.param_groups:
+                    param_group['lr'] = lr_this_step
+
+                if use_amp and scaler is not None:
+                    scaler.step(optim)
+                    scaler.update()
+                else:
+                    optim.step()
+                optim.zero_grad()
+        else:
+            # If not trainable, we still need to set lr for logging
+            lr_this_step = 0
 
         if len(metrics):
-            assert not any(v.requires_grad for v in metrics.values())
+            if 'loss' in metrics and isinstance(metrics['loss'], torch.Tensor):
+                assert not metrics['loss'].requires_grad
 
-            metric_keys = list(sorted(metrics.keys()))
+            metric_keys = list(sorted([k for k, v in metrics.items() if isinstance(v, torch.Tensor)]))
+
+            if not metric_keys:
+                # Handle case where no tensor metrics are present
+                reduced_metrics = {k: v for k, v in metrics.items() if not isinstance(v, torch.Tensor)}
+                reduced_metrics["train/lr"] = lr_this_step
+                self._send_progress('train_batch', {'metrics': reduced_metrics, 'step': self.train_state.step, 'total_steps': self.train_state.total_steps})
+                return reduced_metrics, False
+
             metric_values = torch.stack([metrics[k] for k in metric_keys])
             if self.world_size > 1:
                 dist.reduce(metric_values, dst=0)
@@ -193,9 +208,8 @@ class Trainer:
             set_ids = {k: idx for idx, k in enumerate(self.eval_metadata.sets)}
             all_preds = {}
             metric_keys = []
-            metric_values = None
-            metric_global_batch_size = [0 for _ in range(len(set_ids))]
-            carry = None
+            tensor_metric_values = None
+            non_tensor_metrics = [{} for _ in range(len(set_ids))]
             device = torch.device(self.device)
 
             self._send_progress('start_evaluation_phase')
@@ -220,32 +234,38 @@ class Trainer:
                 del carry, preds, batch, all_finish
 
                 set_id = set_ids[set_name]
-                if metric_values is None:
-                    metric_keys = list(sorted(metrics.keys()))
-                    metric_values = torch.zeros((len(set_ids), len(metrics.values())), dtype=torch.float32, device=device)
+                if tensor_metric_values is None:
+                    metric_keys = list(sorted([k for k, v in metrics.items() if isinstance(v, torch.Tensor)]))
+                    tensor_metric_values = torch.zeros((len(set_ids), len(metric_keys)), dtype=torch.float32, device=device)
 
-                metric_values[set_id] += torch.stack([metrics[k] for k in metric_keys])
-                metric_global_batch_size[set_id] += global_batch_size
+                tensor_metrics_stacked = torch.stack([metrics[k] for k in metric_keys])
+                tensor_metric_values[set_id] += tensor_metrics_stacked
+
+                for k, v in metrics.items():
+                    if not isinstance(v, torch.Tensor):
+                        non_tensor_metrics[set_id][k] = non_tensor_metrics[set_id].get(k, 0) + v
 
             if len(all_preds) and checkpoint_path is not None:
                 all_preds = {k: torch.cat(v, dim=0) for k, v in all_preds.items()}
                 os.makedirs(checkpoint_path, exist_ok=True)
                 torch.save(all_preds, os.path.join(checkpoint_path, f"step_{self.train_state.step}_all_preds.{self.rank}"))
 
-            if metric_values is not None:
+            if tensor_metric_values is not None:
                 if self.world_size > 1:
-                    dist.reduce(metric_values, dst=0)
+                    dist.reduce(tensor_metric_values, dst=0)
                 if self.rank == 0:
-                    reduced_metrics = metric_values.cpu().numpy()
-                    reduced_metrics = {
-                        set_name: {metric_name: reduced_metrics[set_id, metric_id] for metric_id, metric_name in enumerate(metric_keys)}
-                        for set_id, set_name in enumerate(set_ids)
-                    }
-                    for set_name, metrics in reduced_metrics.items():
-                        count = metrics.pop("count")
-                        reduced_metrics[set_name] = {k: v / count for k, v in metrics.items()}
-                    self._send_progress('end_evaluation_phase', {'metrics': reduced_metrics})
-                    return reduced_metrics
+                    reduced_metrics = tensor_metric_values.cpu().numpy()
+                    final_metrics = {}
+                    for set_id, set_name in enumerate(set_ids):
+                        final_metrics[set_name] = {metric_name: reduced_metrics[set_id, metric_id] for metric_id, metric_name in enumerate(metric_keys)}
+                        final_metrics[set_name].update(non_tensor_metrics[set_id])
+
+                    for set_name, metrics in final_metrics.items():
+                        count = metrics.pop("count", 1)
+                        final_metrics[set_name] = {k: v / count for k, v in metrics.items()}
+
+                    self._send_progress('end_evaluation_phase', {'metrics': final_metrics})
+                    return final_metrics
         return None
 
     def run_sequential_training(self) -> Dict[str, Any]:

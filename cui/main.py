@@ -7,21 +7,23 @@ from rich.rule import Rule
 from sc_engine.core.model_runner import ScientificModelRunner
 from sc_engine.core.config_manager import ConfigManager
 from sc_engine.core.challenge_registry import ChallengeRegistry
+from sc_engine.core.ui_utils import get_available_challenges, get_available_models
 from dataset_manager import dataset_manager
 from cui.progress import CUIProgressHandler
 
 @click.group()
-def cui():
+@click.pass_context
+def cui(ctx):
     """A console-based interface for the Scientific Discovery Engine."""
+    # The context is now passed down from the main CLI group in run.py
     pass
 
 @cui.command(name="list-challenges")
-def list_challenges():
+@click.pass_context
+def list_challenges(ctx):
     """Lists all available scientific challenges."""
-    console = Console()
-    config_manager = ConfigManager('config')
-    challenge_registry = ChallengeRegistry(config_manager)
-    challenges = challenge_registry.get_all_challenges()
+    console = ctx.obj.console
+    challenges = get_available_challenges(ctx.obj.challenge_registry)
 
     if not challenges:
         console.print("[yellow]No challenges found.[/yellow]")
@@ -39,11 +41,11 @@ def list_challenges():
     console.print(table)
 
 @cui.command(name="list-models")
-def list_models():
+@click.pass_context
+def list_models(ctx):
     """Lists all available models."""
-    console = Console()
-    config_manager = ConfigManager('config')
-    models = config_manager.load_model_configs()
+    console = ctx.obj.console
+    models = get_available_models(ctx.obj.config_manager)
 
     if not models:
         console.print("[yellow]No models found.[/yellow]")
@@ -59,18 +61,20 @@ def list_models():
     console.print(table)
 
 
-@cui.command()
-def run():
+@cui.command(name="run-interactive")
+@click.pass_context
+def run_interactive(ctx):
     """Interactively run a scientific evaluation."""
-    console = Console()
+    console = ctx.obj.console
+    config_manager = ctx.obj.config_manager
+    challenge_registry = ctx.obj.challenge_registry
+
     console.print("[bold blue]Welcome to the Interactive Experiment Runner![/bold blue]")
     console.print("Let's set up a new scientific evaluation.")
 
     # Get Challenge
     console.print(Rule("[bold cyan]Step 1: Select a Challenge[/bold cyan]"))
-    config_manager = ConfigManager('config')
-    challenge_registry = ChallengeRegistry(config_manager)
-    challenges = challenge_registry.get_all_challenges()
+    challenges = get_available_challenges(challenge_registry)
 
     challenge_table = Table(title="🔬 Available Scientific Challenges")
     challenge_table.add_column("Index", style="magenta")
@@ -87,7 +91,7 @@ def run():
 
     # Get Models
     console.print(Rule("[bold cyan]Step 2: Select Models[/bold cyan]"))
-    model_configs = config_manager.load_model_configs()
+    model_configs = get_available_models(config_manager)
     models = list(model_configs.keys())
 
     model_table = Table(title="🤖 Available Models")
@@ -143,6 +147,53 @@ def list_datasets():
         table.add_row(dataset_name)
 
     console.print(table)
+
+
+@cui.command(name="run-once")
+@click.option('--challenge-id', required=True, help='The ID of the challenge to run.')
+@click.option('--model', 'models', multiple=True, help='The name of a model to run. Can be specified multiple times.')
+@click.option('--patience', type=click.Choice(['low', 'medium', 'high']), default='medium', help='The patience level for the run.')
+@click.option('--smoke-test', is_flag=True, default=False, help='Run in smoke test mode.')
+@click.pass_context
+def run_once(ctx, challenge_id, models, patience, smoke_test):
+    """Run a scientific evaluation non-interactively."""
+    console = ctx.obj.console
+
+    if not models:
+        console.print("[bold red]Error: At least one --model must be specified.[/bold red]")
+        return
+
+    available_challenges = {c.id: c for c in get_available_challenges(ctx.obj.challenge_registry)}
+    if challenge_id not in available_challenges:
+        console.print(f"[bold red]Error: Challenge ID '{challenge_id}' not found.[/bold red]")
+        console.print("Use 'list-challenges' to see available IDs.")
+        return
+
+    available_models = get_available_models(ctx.obj.config_manager).keys()
+    for model_name in models:
+        if model_name not in available_models:
+            console.print(f"[bold red]Error: Model '{model_name}' not found.[/bold red]")
+            console.print("Use 'list-models' to see available models.")
+            return
+
+    console.print(Rule(f"[bold green]🚀 Launching Non-Interactive Evaluation[/bold green]"))
+    console.print(f"Challenge: [bold yellow]{challenge_id}[/bold yellow]")
+    console.print(f"Models: [bold yellow]{', '.join(models)}[/bold yellow]")
+    console.print(f"Patience: [bold yellow]{patience}[/bold yellow]")
+    console.print(f"Smoke Test: [bold yellow]{smoke_test}[/bold yellow]")
+
+    progress_handler = CUIProgressHandler()
+    runner = ScientificModelRunner()
+    runner.run(
+        run_type="comparison",
+        challenge_id=challenge_id,
+        patience_level=patience,
+        smoke_test=smoke_test,
+        models=list(models),
+        progress_handler=progress_handler
+    )
+
+    console.print("[green]✅ Non-interactive evaluation completed successfully![/green]")
 
 
 if __name__ == "__main__":

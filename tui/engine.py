@@ -98,7 +98,7 @@ class ExperimentRunner(Widget):
             return
 
         self.post_message(ExperimentStarted(config=config))
-        self.experiment_worker = self.run_worker(self.run_experiment, config, exclusive=True, thread=True)
+        self.experiment_worker = self.run_worker(lambda: self.run_experiment(config), exclusive=True, thread=True)
 
     def pause_experiment(self) -> None:
         """Pauses the running experiment."""

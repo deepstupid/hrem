@@ -1,6 +1,6 @@
 from textual.app import ComposeResult
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Log, Static
+from textual.widgets import Header, Footer, Log, Static, Button
 from textual.containers import Container
 from typing import Any
 
@@ -28,6 +28,15 @@ class DiscoveryScreen(Screen):
             yield SetupView()
             yield RunView(classes="hidden")
         yield Footer()
+        yield Button("🚀 Launch Experiment", id="start-button", variant="success")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events to start the experiment."""
+        if event.button.id == "start-button":
+            setup_view = self.query_one(SetupView)
+            config = setup_view.get_config()
+            if config:
+                self.on_setup_view_start_experiment(SetupView.StartExperiment(config))
 
     def _reset_to_setup_view(self):
         """Resets the screen to its initial state, ready for a new experiment."""

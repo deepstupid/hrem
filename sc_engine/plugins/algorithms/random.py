@@ -11,7 +11,7 @@ class RandomModel(torch.nn.Module):
         loss = torch.tensor(0.0, device=batch['inputs'].device)
 
         # The trainer also expects metrics.
-        metrics = {'loss': loss.item(), 'count': batch['inputs'].size(0)}
+        metrics = {'loss': loss, 'count': batch['inputs'].size(0)}
 
         # No predictions are generated, and we are always "finished".
         preds = {}

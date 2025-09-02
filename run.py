@@ -1,9 +1,13 @@
 import click
 from rich.console import Console
 from functools import wraps
+import os
+import importlib
 
 # Correctly import the ScientificModelRunner
 from sc_engine.core.model_runner import ScientificModelRunner
+from sc_engine.core.config_manager import ConfigManager
+from sc_engine.core.challenge_registry import ChallengeRegistry
 
 console = Console()
 
@@ -22,10 +26,18 @@ def handle_exceptions(func):
             console.print(f"[red]An unexpected error occurred: {e}[/red]")
     return wrapper
 
-@click.group()
-def cli():
+class AppContext:
+    """A context object to hold shared resources."""
+    def __init__(self):
+        self.config_manager = ConfigManager('config')
+        self.challenge_registry = ChallengeRegistry(self.config_manager)
+        self.console = Console()
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
     """HRM System: A unified interface for scientific comparisons."""
-    pass
+    ctx.obj = AppContext()
 
 @cli.command()
 def gui():
@@ -53,8 +65,8 @@ def tui():
         console.print(f"[bold red]An unexpected error occurred while launching the TUI: {e}[/bold red]")
 
 try:
-    from cui.main import cui
-    cli.add_command(cui)
+    from cui.main import cui as cui_group
+    cli.add_command(cui_group, 'cui')
 except ImportError as e:
     @cli.command()
     def cui():

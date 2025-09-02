@@ -35,9 +35,6 @@ class SetupView(Static):
                 yield Button("Medium", id="patience_medium")
                 yield Button("High", id="patience_high")
 
-            yield Static() # Spacer
-            yield Button("🚀 Launch Experiment", id="start-button", variant="success")
-
     def on_mount(self) -> None:
         """Populates the control widgets with data from the config files."""
         try:
@@ -75,28 +72,26 @@ class SetupView(Static):
             # Select the pressed one
             event.button.variant = "primary"
 
-        elif event.button.id == "start-button":
-            challenge = self.query_one(Select).value
-            if not challenge:
-                # Handle error: no challenge selected
-                return
+    def get_config(self) -> Dict[str, Any] | None:
+        """Returns the current experiment configuration from the UI."""
+        challenge = self.query_one(Select).value
+        if not challenge:
+            return None
 
-            selected_models = [cb.label for cb in self.query(Checkbox) if cb.value]
-            if not selected_models:
-                # Handle error: no models selected
-                return
+        selected_models = [cb.label for cb in self.query(Checkbox) if cb.value]
+        if not selected_models:
+            return None
 
-            patience = "low"
-            if self.query_one("#patience_medium").variant == "primary":
-                patience = "medium"
-            elif self.query_one("#patience_high").variant == "primary":
-                patience = "high"
+        patience = "low"
+        if self.query_one("#patience_medium").variant == "primary":
+            patience = "medium"
+        elif self.query_one("#patience_high").variant == "primary":
+            patience = "high"
 
-            config = {
-                "run_type": "comparison",
-                "challenge_id": str(challenge),
-                "patience_level": patience,
-                "models": selected_models,
-                "smoke_test": False, # We can add a checkbox for this later
-            }
-            self.post_message(self.StartExperiment(config))
+        return {
+            "run_type": "comparison",
+            "challenge_id": str(challenge),
+            "patience_level": patience,
+            "models": selected_models,
+            "smoke_test": False,
+        }

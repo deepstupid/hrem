@@ -5,7 +5,6 @@ import numpy as np
 
 from argdantic import ArgParser
 from pydantic import BaseModel
-from tqdm import tqdm
 
 from common import PuzzleDatasetMetadata
 
@@ -65,7 +64,7 @@ def convert_subset(set_name: str, config: DataProcessConfig):
     results["puzzle_indices"].append(0)
     results["group_indices"].append(0)
 
-    for inp, out in zip(tqdm(inputs), labels):
+    for inp, out in zip(inputs, labels):
         # Push puzzle (only single example)
         results["inputs"].append(inp)
         results["labels"].append(out)
@@ -126,8 +125,10 @@ def convert_subset(set_name: str, config: DataProcessConfig):
 
 @cli.command(singleton=True)
 def preprocess_data(config: DataProcessConfig):
+    print("Starting dataset generation...")
     convert_subset("train", config)
     convert_subset("test", config)
+    print("Finished dataset generation.")
 
 
 if __name__ == "__main__":

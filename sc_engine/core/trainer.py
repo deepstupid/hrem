@@ -101,7 +101,7 @@ class Trainer:
 
     def initialize(self):
         """Initializes the trainer, including data loaders and model."""
-        self.setup_distributed_training()
+        # self.setup_distributed_training() # This can hang in non-distributed environments
         self.prepare_dataloaders()
         self.build_model()
         self.train_loader_iter = iter(self.train_loader)

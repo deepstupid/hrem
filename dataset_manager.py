@@ -71,10 +71,10 @@ class DatasetManager:
                 args.extend(["--num-samples", "1000", "--seq-len", "10"])
                 
             # Run the dataset generation script
-            result = subprocess.run(args, capture_output=True, text=True)
+            result = subprocess.run(args, text=True)
             
             if result.returncode != 0:
-                console.print(f"[red]Error generating synthetic dataset: {result.stderr}[/red]")
+                console.print(f"[red]Error generating synthetic dataset[/red]")
                 # Fallback to copy task if the requested task fails
                 if task_type != "copy":
                     console.print("[yellow]Falling back to copy task...[/yellow]")
@@ -155,11 +155,11 @@ class DatasetManager:
                 args.append("--num-aug=0")
                 
             # Run the dataset generation script
-            result = subprocess.run(args, capture_output=True, text=True)
+            result = subprocess.run(args, text=True)
             
             if result.returncode != 0:
-                console.print(f"[red]Error generating {dataset_name} dataset: {result.stderr}[/red]")
-                raise Exception(f"Failed to generate {dataset_name} dataset: {result.stderr}")
+                console.print(f"[red]Error generating {dataset_name} dataset[/red]")
+                raise Exception(f"Failed to generate {dataset_name} dataset")
             else:
                 console.print(f"[green]Successfully generated {dataset_name} dataset at {dataset_path}[/green]")
                 

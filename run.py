@@ -99,6 +99,39 @@ def tui():
     except Exception as e:
         console.print(f"[bold red]An unexpected error occurred while launching the TUI: {e}[/bold red]")
 
+@cli.command()
+@click.option("--challenge", type=str, default="synthetic_sort", help="Challenge ID to run.")
+@click.option("--patience", type=click.Choice(["low", "medium", "high"]), default="medium",
+              help="Patience level for the comparison.")
+@click.option("--smoke-test", is_flag=True, default=False, help="Run in smoke test mode.")
+@click.option("--dataset", type=str, default=None, help="Dataset to use.")
+@click.option("--models", type=str, multiple=True, help="Models to evaluate.")
+@click.option("--arch-overrides", type=str, default=None, help="JSON string of architecture overrides.")
+def cui(challenge: str, patience: str, smoke_test: bool, dataset: str, models: list[str], arch_overrides: str):
+    """Launch the new Console User Interface."""
+    try:
+        from cui.main import main as cui_main
+
+        args = []
+        args.extend(["--challenge", challenge])
+        args.extend(["--patience", patience])
+        if smoke_test:
+            args.append("--smoke-test")
+        if dataset:
+            args.extend(["--dataset", dataset])
+        for model in models:
+            args.extend(["--models", model])
+        if arch_overrides:
+            args.extend(["--arch-overrides", arch_overrides])
+
+        cui_main(args, standalone_mode=False)
+
+    except ImportError as e:
+        console.print(f"[red]CUI Error: {e}[/red]")
+        console.print("[yellow]Please ensure the CUI components are correctly structured.[/yellow]")
+    except Exception as e:
+        console.print(f"[bold red]An unexpected error occurred while launching the CUI: {e}[/bold red]")
+
 
 if __name__ == "__main__":
     cli()

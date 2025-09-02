@@ -1,4 +1,315 @@
-"""Scientific insight generation from algorithm comparisons."""
+from abc import ABC, abstractmethod
+from typing import Dict, Any, Callable, List
+import optuna
+
+class HyperparameterOptimizer(ABC):
+    """
+    Abstract base class for hyperparameter optimizers.
+    """
+    @abstractmethod
+    def optimize(self, objective: Callable, search_space: Dict[str, Any], n_trials: int) -> Dict[str, Any]:
+        """
+        Run the optimization process.
+
+        Args:
+            objective: The objective function to minimize.
+            search_space: The search space for the hyperparameters.
+            n_trials: The number of trials to run.
+
+        Returns:
+            A dictionary containing the best parameters found.
+        """
+        pass
+
+class OptunaOptimizer(HyperparameterOptimizer):
+    """
+    A hyperparameter optimizer that uses Optuna.
+    """
+    def optimize(self, objective: Callable, search_space: Dict[str, Any], n_trials: int) -> Dict[str, Any]:
+        """
+        Run the optimization process using Optuna.
+        """
+        def optuna_objective(trial: optuna.Trial) -> float:
+            hparams = {}
+            for param_name, param_config in search_space.items():
+                if param_config['type'] == 'int':
+                    hparams[param_name] = trial.suggest_int(param_name, param_config['low'], param_config['high'])
+                elif param_config['type'] == 'float':
+                    hparams[param_name] = trial.suggest_float(param_name, param_config['low'], param_config['high'], log=param_config.get('log', False))
+                elif param_config['type'] == 'categorical':
+                    hparams[param_name] = trial.suggest_categorical(param_name, param_config['choices'])
+            return objective(hparams)
+
+        study = optuna.create_study(direction="minimize")
+        study.optimize(optuna_objective, n_trials=n_trials)
+
+        return study.best_params
+
+from .demo_timing_utils import EnhancedTimingManager as TimingManager
+
+class ScientificTimingManager(TimingManager):
+    """Extended timing manager for scientific discovery metrics."""
+
+    def __init__(self):
+        super().__init__()
+        self.discovery_metrics: Dict[str, list] = {}
+
+    def record_discovery_timing(self, activity: str, elapsed_time: float, insights_generated: int):
+        """
+        Record timing with scientific discovery metrics.
+
+        Args:
+            activity: Name of the activity
+            elapsed_time: Time elapsed for the activity
+            insights_generated: Number of insights generated during the activity
+        """
+        # Record standard timing
+        self.record_timing(activity, elapsed_time)
+
+        # Record discovery-specific metrics
+        self.record_metric(f"discovery_insights_{activity}", insights_generated)
+        self.record_metric(f"discovery_efficiency_{activity}",
+                          insights_generated / elapsed_time if elapsed_time > 0 else 0)
+
+        # Store in discovery metrics
+        if f"discovery_{activity}" not in self.discovery_metrics:
+            self.discovery_metrics[f"discovery_{activity}"] = []
+        self.discovery_metrics[f"discovery_{activity}"].append({
+            'elapsed_time': elapsed_time,
+            'insights_generated': insights_generated,
+            'timestamp': self.current_iteration
+        })
+
+    def predict_discovery_value(self, time_investment: float) -> Dict[str, Any]:
+        """
+        Predict scientific value of time investment.
+
+        Args:
+            time_investment: Amount of time to invest
+
+        Returns:
+            Dictionary with expected insights and value metrics
+        """
+        # This is a simplified prediction model
+        # In practice, this would be based on historical data and machine learning
+
+        # Calculate average insights per second from historical data
+        avg_insights_per_second = 0.1  # Placeholder value
+
+        # Get recent discovery efficiency
+        recent_efficiency = self.get_metric_stats("discovery_efficiency")
+        if recent_efficiency and recent_efficiency.get('avg'):
+            avg_insights_per_second = recent_efficiency['avg']
+
+        expected_insights = time_investment * avg_insights_per_second
+        discovery_value = min(1.0, expected_insights / 5.0)  # Normalize to 0-1 scale
+
+        return {
+            'expected_insights': expected_insights,
+            'discovery_value': discovery_value,
+            'confidence': 0.7  # Simplified confidence measure
+        }
+
+    def get_discovery_stats(self) -> Dict[str, Any]:
+        """Get statistics on discovery metrics."""
+        stats = {}
+        for metric_name in self.discovery_metrics.keys():
+            if self.discovery_metrics[metric_name]:
+                values = self.discovery_metrics[metric_name]
+                insights = [v['insights_generated'] for v in values]
+                times = [v['elapsed_time'] for v in values]
+
+                stats[metric_name] = {
+                    'total_insights': sum(insights),
+                    'avg_insights_per_run': sum(insights) / len(insights) if insights else 0,
+                    'total_time': sum(times),
+                    'avg_time_per_run': sum(times) / len(times) if times else 0
+                }
+
+        return stats
+
+import os
+from typing import List, Dict, Any
+from collections import defaultdict
+from .insights import ScientificInsight, InsightType, Evidence
+
+INSIGHT_EMOJIS = {
+    InsightType.META: "🌟",
+    InsightType.HYPOTHESIS: "🎯",
+    InsightType.EFFICIENCY: "🚀",
+    InsightType.SCALABILITY: "📈",
+    InsightType.ROBUSTNESS: "🛡️",
+    InsightType.CONVERGENCE: "📉",
+    InsightType.GENERALIZATION: "🌍",
+    InsightType.ADAPTABILITY: "🔧",
+    InsightType.FAILURE: "💥",
+}
+
+class ScientificReportGenerator:
+    """Generates a Markdown report from a list of scientific insights."""
+
+    def __init__(self, challenge_name: str, algorithm_names: List[str], final_results: Dict[str, Any] = None, plot_path: str = None):
+        """Initialize the report generator."""
+        self.challenge_name = challenge_name
+        self.algorithm_names = algorithm_names
+        self.final_results = final_results
+        self.plot_path = plot_path
+
+    def generate_report(self, insights: List[ScientificInsight]) -> str:
+        """Generate a Markdown report from a list of insights."""
+        report_parts = [self._generate_header()]
+
+        if self.final_results:
+            report_parts.append(self._generate_summary_table())
+            report_parts.append("---")
+
+        if self.plot_path:
+            report_parts.append(self._generate_plot_section())
+            report_parts.append("---")
+
+        if not insights:
+            report_parts.append("## No significant insights were generated in this run.")
+            return "\n".join(report_parts)
+
+        meta_insights = [i for i in insights if i.type == InsightType.META]
+        hypothesis_insights = [i for i in insights if i.type == InsightType.HYPOTHESIS]
+        failure_insights = [i for i in insights if i.type == InsightType.FAILURE]
+        other_insights = [i for i in insights if i.type not in [InsightType.META, InsightType.HYPOTHESIS, InsightType.FAILURE]]
+
+        report_parts.append(self._generate_executive_summary(meta_insights, failure_insights))
+        report_parts.append("---")
+
+        if hypothesis_insights:
+            report_parts.append(self._generate_hypothesis_section(hypothesis_insights))
+            report_parts.append("---")
+
+        if other_insights:
+            report_parts.append(self._generate_detailed_findings(other_insights))
+            report_parts.append("---")
+
+        if failure_insights:
+            report_parts.append(self._generate_failure_analysis_section(failure_insights))
+            report_parts.append("---")
+
+        return "\n".join(report_parts)
+
+    def _generate_header(self) -> str:
+        """Generate the report header."""
+        return f"# Scientific Comparison Report: {self.challenge_name}\n\n**Algorithms Compared:** `{'`, `'.join(self.algorithm_names)}`\n"
+
+    def _generate_summary_table(self) -> str:
+        """Generates a markdown table of the final results."""
+        section = "## 📈 Final Metrics Summary\n\n"
+        if not self.final_results:
+            return ""
+
+        headers = ["Algorithm"]
+        all_keys = set()
+        for result in self.final_results.values():
+            # The result for each algorithm is now a dictionary of metrics for each dataset split (e.g., 'all')
+            for split_result in result.values():
+                if isinstance(split_result, dict):
+                    all_keys.update(split_result.keys())
+
+        sorted_keys = sorted(list(all_keys), key=lambda x: ('loss' not in x, 'accuracy' not in x, x))
+        headers.extend([key.replace('_', ' ').title() for key in sorted_keys])
+
+        section += f"| {' | '.join(headers)} |\n"
+        section += f"|{'|'.join(['---'] * len(headers))}|\n"
+
+        for alg_name, results in self.final_results.items():
+            row = [alg_name.replace('_optimized', ' (Optimized)')]
+            # We will display the 'all' split results in the summary table
+            summary_metrics = results.get('all', {})
+            for key in sorted_keys:
+                value = summary_metrics.get(key)
+                if isinstance(value, float):
+                    row.append(f"{value:.4f}")
+                else:
+                    row.append(str(value) if value is not None else "N/A")
+            section += f"| {' | '.join(row)} |\n"
+
+        return section + "\n"
+
+    def _generate_plot_section(self) -> str:
+        """Generates the markdown section for the performance plot."""
+        section = "## 📊 Performance Plot\n\n"
+        if not self.plot_path or not os.path.exists(self.plot_path):
+            return section + "No performance plot was generated for this run.\n"
+
+        relative_plot_path = os.path.relpath(self.plot_path, start=os.getcwd())
+        section += f"![Performance Plot]({relative_plot_path})\n"
+        return section + "\n"
+
+    def _generate_executive_summary(self, meta_insights: List[ScientificInsight], failure_insights: List[ScientificInsight]) -> str:
+        summary = "## 🌟 Executive Summary\n\n"
+        if failure_insights:
+            summary += "**Warning:** One or more models encountered failures during the run. See the Failure Analysis section for details.\n\n"
+        if not meta_insights:
+            summary += "No overarching meta-insights were identified. See detailed findings below.\n"
+            return summary
+        for insight in meta_insights:
+            summary += f"### {insight.title}\n{insight.summary}\n\n"
+            if insight.recommendations:
+                summary += "**Top Recommendation:**\n"
+                for rec in insight.recommendations:
+                    summary += f"> {rec}\n"
+        return summary
+
+    def _generate_hypothesis_section(self, insights: List[ScientificInsight]) -> str:
+        section = "## 🎯 Hypothesis Testing\n\n"
+        for insight in sorted(insights, key=lambda i: i.title):
+            section += self._format_insight(insight)
+            section += "\n"
+        return section
+
+    def _generate_failure_analysis_section(self, insights: List[ScientificInsight]) -> str:
+        section = "## 💥 Failure Analysis\n\n"
+        for insight in insights:
+            section += self._format_insight(insight)
+            section += "\n"
+        return section
+
+    def _generate_detailed_findings(self, insights: List[ScientificInsight]) -> str:
+        section = "## 📊 Detailed Findings\n\n"
+        grouped_insights = defaultdict(list)
+        for insight in insights:
+            grouped_insights[insight.type].append(insight)
+        for insight_type, insight_list in sorted(grouped_insights.items(), key=lambda item: item[0].value):
+            emoji = INSIGHT_EMOJIS.get(insight_type, "🔹")
+            section += f"### {emoji} {insight_type.value.replace('_', ' ').title()}\n\n"
+            for insight in sorted(insight_list, key=lambda i: i.discovery_potential, reverse=True):
+                section += self._format_insight(insight)
+                section += "\n"
+        return section
+
+    def _format_insight(self, insight: ScientificInsight) -> str:
+        emoji = INSIGHT_EMOJIS.get(insight.type, "🔹")
+        formatted = f"#### {emoji} {insight.title}\n\n"
+        if insight.type not in [InsightType.HYPOTHESIS, InsightType.META]:
+             formatted += f"**Confidence:** `{insight.confidence:.1%}` | **Discovery Potential:** `{insight.discovery_potential:.1%}`\n\n"
+        if insight.summary:
+            formatted += f"_{insight.summary}_\n\n"
+        if insight.implications:
+            formatted += "**Implications:**\n"
+            for implication in insight.implications:
+                formatted += f"- {implication}\n"
+            formatted += "\n"
+        if insight.causal_attribution:
+            formatted += f"**Causal Attribution:** {insight.causal_attribution}\n\n"
+        if insight.recommendations:
+            formatted += "**Recommendations:**\n"
+            for rec in insight.recommendations:
+                formatted += f"- {rec}\n"
+            formatted += "\n"
+        if insight.evidence:
+            formatted += "**Evidence:**\n| Metric | Value | Effect Size | p-value | Description |\n|---|---|---|---|---|\n"
+            for ev in insight.evidence:
+                value_str = f"{ev.metric_value:.4f}" if isinstance(ev.metric_value, float) else str(ev.metric_value)
+                effect_str = f"{ev.effect_size:.3f}" if ev.effect_size is not None else "N/A"
+                pval_str = f"{ev.p_value:.3f}" if ev.p_value is not None else "N/A"
+                formatted += f"| {ev.metric_name} | `{value_str}` | `{effect_str}` | `{pval_str}` | {ev.description or ''} |\n"
+        return formatted
 
 import math
 import itertools

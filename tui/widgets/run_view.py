@@ -5,10 +5,16 @@ from textual.message import Message
 from textual.reactive import reactive
 
 from .metrics_panel import MetricsPanel
-from tui.events import PauseExperiment, ResumeExperiment, CancelExperiment
+# Import only Pause and Resume from global events
+from tui.events import PauseExperiment, ResumeExperiment
 
 class RunView(Static):
     """The view for monitoring a running experiment."""
+
+    # Define a local message for cancellation
+    class CancelExperiment(Message):
+        """Message to signal the user wants to cancel the experiment."""
+        pass
 
     is_paused = reactive(False)
 
@@ -51,4 +57,5 @@ class RunView(Static):
                 self.post_message(PauseExperiment())
             self.is_paused = not self.is_paused
         elif event.button.id == "cancel-button":
-            self.post_message(CancelExperiment())
+            # Post the local message
+            self.post_message(self.CancelExperiment())

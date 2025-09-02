@@ -1,1 +1,84 @@
-/* This file will contain the CSS for the Textual TUI. */
+/* General Layout */
+#discovery-container {
+    height: 100%;
+}
+
+/* Setup View */
+#setup-container {
+    padding: 1;
+}
+
+.checkbox-container {
+    height: 10;
+    border: round white;
+    padding: 1;
+}
+
+.header {
+    background: $primary-background-darken-1;
+    color: $text;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#patience-radioset {
+    layout: horizontal;
+    height: auto;
+}
+
+/* Run View */
+#run-header {
+    layout: horizontal;
+    background: $primary-background-darken-2;
+    height: 3;
+    padding: 0 1;
+}
+
+#status-tracker, #phase-tracker, #step-tracker {
+    width: 1fr;
+    height: 100%;
+    content-align: center middle;
+}
+
+#run-content {
+    layout: horizontal;
+}
+
+#metrics-panel {
+    width: 40%;
+    border-right: solid $primary-darken-1;
+}
+
+#live-log {
+    width: 60%;
+}
+
+.control-buttons {
+    layout: horizontal;
+    height: auto;
+    align: center middle;
+    padding-top: 1;
+}
+
+/* Results Screen */
+#results-container {
+    padding: 1;
+}
+
+#performance-plot {
+    border: round white;
+    height: 20;
+}
+
+/* Error Screen */
+#error-container {
+    padding: 1;
+    align: center middle;
+}
+
+#error-log {
+    border: round red;
+    height: 80%;
+    width: 80%;
+    margin-bottom: 1;
+}

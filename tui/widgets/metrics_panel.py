@@ -22,10 +22,12 @@ class MetricsPanel(Static):
             # A unique key for each row to allow updates
             row_key = f"{algorithm}_{key}"
 
-            # Check if the row already exists
-            if table.is_valid_row_index(table.get_row_index(row_key)):
-                 table.update_cell(row_key, "Value", display_value)
-            else:
+            try:
+                # If this doesn't fail, the row exists.
+                table.get_row(row_key)
+                table.update_cell(row_key, "Value", display_value)
+            except KeyError:
+                # The row doesn't exist, so we add it.
                 table.add_row(algorithm, key, display_value, key=row_key)
 
     def clear_metrics(self) -> None:

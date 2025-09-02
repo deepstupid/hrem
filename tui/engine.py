@@ -1,6 +1,6 @@
 from textual.worker import Worker
 from textual.widget import Widget
-from textual.app import get_current_app
+from textual.app import App
 from textual.worker import get_current_worker
 
 from sc_engine.core.progress_handler import ProgressHandler
@@ -17,13 +17,12 @@ from typing import Dict, Any, Optional
 class TUIProgressHandler(ProgressHandler):
     """A progress handler that translates engine events into TUI messages."""
 
-    def __init__(self):
+    def __init__(self, app: App):
+        self.app = app
         try:
             self.worker = get_current_worker()
-            self.app = get_current_app()
         except RuntimeError:
             self.worker = None
-            self.app = None
         self.current_algorithm: Optional[str] = None
 
     def on_progress(self, event_type: str, data: Dict[str, Any]):
@@ -99,7 +98,7 @@ class ExperimentRunner(Widget):
             return
 
         self.post_message(ExperimentStarted(config=config))
-        self.experiment_worker = self.run_experiment(config)
+        self.experiment_worker = self.run_worker(self.run_experiment, config, exclusive=True, thread=True)
 
     def pause_experiment(self) -> None:
         """Pauses the running experiment."""
@@ -114,11 +113,10 @@ class ExperimentRunner(Widget):
         if self.experiment_worker is not None and self.experiment_worker.state == "running":
             self.experiment_worker.cancel()
 
-    @work(exclusive=True, thread=True)
     def run_experiment(self, config: Dict[str, Any]) -> None:
         """The background worker method that runs the actual experiment."""
         try:
-            progress_handler = TUIProgressHandler()
+            progress_handler = TUIProgressHandler(app=self.app)
             runner = ScientificModelRunner()
             runner.run(
                 progress_handler=progress_handler,

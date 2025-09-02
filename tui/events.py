@@ -76,3 +76,7 @@ class PauseExperiment(ExperimentEvent):
 class ResumeExperiment(ExperimentEvent):
     """A message to signal theuser wants to resume the experiment."""
     pass
+
+class CancelExperiment(ExperimentEvent):
+    """A message to signal the user wants to cancel the experiment."""
+    pass

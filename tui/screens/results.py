@@ -2,7 +2,7 @@ from textual.screen import Screen
 from textual.app import ComposeResult
 from textual.widgets import Header, Footer, Button
 from textual.containers import Container
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 
 from tui.widgets.insights_panel import InsightsPanel
 

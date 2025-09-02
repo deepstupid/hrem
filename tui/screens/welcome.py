@@ -17,7 +17,7 @@ class WelcomeScreen(Screen):
         height: 100%;
     }
     #welcome-title {
-        font-style: bold;
+        text-style: bold;
         padding-bottom: 2;
     }
     #welcome-subtitle {

@@ -1,7 +1,7 @@
 from textual.widgets import (
     Static, Button, Checkbox, RadioSet, Select
 )
-from textual.containers import VerticalScroll, Vertical, Horizontal
+from textual.containers import VerticalScroll, Vertical
 from textual.message import Message
 from textual.app import ComposeResult
 from typing import List, Dict, Any
@@ -20,12 +20,12 @@ class SetupView(Static):
 
     def compose(self) -> ComposeResult:
         """Render the setup view."""
-        with Vertical(id="setup-container"):
+        with VerticalScroll(id="setup-container"):
             yield Static("1. Select Challenge", classes="header")
             yield Select([], id="challenge-select", prompt="Select a challenge...")
 
             yield Static("2. Select Models", classes="header")
-            with VerticalScroll(id="model-checkboxes"):
+            with VerticalScroll(id="model-checkboxes", classes="checkbox-container"):
                 # This will be populated on_mount
                 pass
 

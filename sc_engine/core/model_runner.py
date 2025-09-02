@@ -3,13 +3,15 @@ import json
 from rich.console import Console
 
 from .config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel
-from .engine import ScientificDiscoveryEngine, DiscoveryResults
+from .engine import ScientificDiscoveryEngine
+from .orchestrator import EngineOrchestrator, DiscoveryResults
 from .config_manager import ConfigManager
 from .challenge_registry import ChallengeRegistry
+from .interactive_mode_runner import InteractiveModeRunner
 from .schemas import ChallengeSchema
 from .progress_handler import ProgressHandler
 from dataset_manager import dataset_manager
-from tui.control import ExperimentControl
+import threading
 
 console = Console()
 
@@ -27,24 +29,41 @@ class ScientificModelRunner:
         with open("config/training/default.yaml", 'r') as f:
             self.default_training_config = yaml.safe_load(f)
 
-    def run(self, run_type: str, progress_handler: Optional[ProgressHandler] = None, control: Optional[ExperimentControl] = None, **kwargs):
+    def run(self, run_type: str, progress_handler: Optional[ProgressHandler] = None, cancel_event: Optional[threading.Event] = None, **kwargs):
         """
         Run a discovery session based on the specified run type.
         This is the main entry point for kicking off an experiment.
         """
-        if run_type not in ["comparison", "optimization"]:
+        if run_type in ["comparison", "optimization"]:
+            # Essential parameters that must be provided by the caller (GUI/CLI)
+            if not kwargs.get("challenge_id"):
+                raise ValueError("A 'challenge_id' must be provided.")
+            if not kwargs.get("patience_level"):
+                raise ValueError("A 'patience_level' must be provided.")
+            return self._run_discovery_session(run_type, progress_handler=progress_handler, cancel_event=cancel_event, **kwargs)
+
+        elif run_type == "interactive":
+            if not kwargs.get("dataset_path"):
+                raise ValueError("A 'dataset_path' must be provided for interactive mode.")
+            if kwargs.get("puzzle_index") is None:
+                raise ValueError("A 'puzzle_index' must be provided for interactive mode.")
+            return self._run_interactive_session(**kwargs)
+
+        else:
             raise ValueError(f"Invalid run type: {run_type}")
 
-        # Essential parameters that must be provided by the caller (GUI/CLI)
-        challenge_id = kwargs.get("challenge_id")
-        if not challenge_id:
-            raise ValueError("A 'challenge_id' must be provided.")
+    def _run_interactive_session(self, **kwargs):
+        """Helper to configure and run an interactive puzzle session."""
+        challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"))
+        challenge = self._create_challenge_config(challenge_schema, smoke_test=False)
+        algorithms = self._load_algorithms(kwargs.get("models", []))
 
-        patience_level = kwargs.get("patience_level")
-        if not patience_level:
-            raise ValueError("A 'patience_level' must be provided.")
-
-        return self._run_discovery_session(run_type, progress_handler=progress_handler, control=control, **kwargs)
+        runner = InteractiveModeRunner(self.default_training_config, challenge.dataset)
+        return runner.run(
+            dataset_path=kwargs["dataset_path"],
+            puzzle_index=kwargs["puzzle_index"],
+            algorithm_configs=algorithms
+        )
 
     def _get_challenge_data(self, challenge_id: str) -> ChallengeSchema:
         """Fetches and validates challenge data from the registry."""
@@ -53,7 +72,7 @@ class ScientificModelRunner:
             raise ValueError(f"Challenge with ID '{challenge_id}' not found")
         return challenge_data
 
-    def _run_discovery_session(self, run_type: str, progress_handler: Optional[ProgressHandler], control: Optional[ExperimentControl], **kwargs):
+    def _run_discovery_session(self, run_type: str, progress_handler: Optional[ProgressHandler], cancel_event: Optional[threading.Event], **kwargs):
         """Helper to configure and run the scientific discovery engine."""
         challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"))
 
@@ -89,10 +108,11 @@ class ScientificModelRunner:
             default_training_config=self.default_training_config,
             config=engine_config,
             progress_handler=progress_handler,
-            control=control
+            cancel_event=cancel_event
         )
 
-        results = engine.execute_discovery_session(patience_budget)
+        orchestrator = EngineOrchestrator(engine)
+        results = orchestrator.run(patience_budget)
         self._display_results(results)
         return results
 

@@ -14,7 +14,7 @@ from .utils import (
 from .progress_handler import ProgressHandler
 from puzzle_dataset import PuzzleDatasetMetadata
 import importlib
-from tui.control import ExperimentControl
+import threading
 
 class Trainer:
     """
@@ -22,7 +22,7 @@ class Trainer:
     It is responsible for setting up the environment, building the model,
     and running the training and evaluation loops.
     """
-    def __init__(self, training_config: Dict[str, Any], model_config: Dict[str, Any], data_config: Dict[str, Any], run_config: Dict[str, Any], progress_handler: Optional[ProgressHandler] = None, control: Optional[ExperimentControl] = None):
+    def __init__(self, training_config: Dict[str, Any], model_config: Dict[str, Any], data_config: Dict[str, Any], run_config: Dict[str, Any], progress_handler: Optional[ProgressHandler] = None, cancel_event: Optional[threading.Event] = None):
         """
         Initializes the Trainer.
 
@@ -32,14 +32,14 @@ class Trainer:
             data_config: The configuration for the data.
             run_config: The configuration for the run.
             progress_handler: An optional handler for reporting progress.
-            control: An optional control object for pausing/cancelling.
+            cancel_event: An optional event to signal cancellation.
         """
         self.training_config = training_config
         self.model_config = model_config
         self.data_config = data_config
         self.run_config = run_config
         self.progress_handler = progress_handler
-        self.control = control or ExperimentControl() # Default control if none provided
+        self.cancel_event = cancel_event or threading.Event()
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.rank = 0
@@ -287,10 +287,9 @@ class Trainer:
         # The main training loop, broken down by steps
         for step in range(self.train_state.total_steps):
             # --- Check for pause/cancel signals ---
-            if self.control.is_cancelled():
+            if self.cancel_event.is_set():
                 self._send_progress('training_cancelled', {'step': step})
                 break
-            self.control.wait_if_paused() # This will block if paused
 
             metrics, is_finished = self.train_batch()
             if is_finished:

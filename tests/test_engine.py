@@ -42,7 +42,7 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
         engine.patience_manager = MagicMock()
 
         # Act
-        engine._run_hyperparameter_optimization(baseline_results={})
+        engine.run_hyperparameter_optimization(baseline_results={})
 
         # Assert
         engine.optimizer.optimize.assert_called_once()
@@ -67,7 +67,7 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
         engine.timing_manager = MagicMock()
 
         # Act
-        results = engine._run_evaluation(
+        results = engine.run_evaluation(
             title="Test Evaluation",
             phase=MagicMock(),
             patience_allocation=0.5,

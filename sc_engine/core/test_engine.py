@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.'))
 
 from sc_engine.core.config import ChallengeConfig, AlgorithmConfig, PatienceBudget, ChallengeLevel, Hypothesis
 from sc_engine.core.engine import ScientificDiscoveryEngine
+from sc_engine.core.orchestrator import EngineOrchestrator
 from dataset_manager import dataset_manager
 
 @mock.patch('puzzle_dataset.PuzzleDataset')
@@ -74,7 +75,8 @@ def test_full_workflow(MockPuzzleDataset):
             config={"n_trials": 1, "smoke_test": True}
         )
 
-        results = engine.execute_discovery_session(patience_budget)
+        orchestrator = EngineOrchestrator(engine)
+        results = orchestrator.run(patience_budget)
     
     assert results.challenge.name == "Sequence Duplication Challenge"
     assert len(results.algorithm_results) > 0

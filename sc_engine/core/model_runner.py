@@ -41,7 +41,19 @@ class ScientificModelRunner:
                 raise ValueError("A 'challenge_id' must be provided.")
             if not kwargs.get("patience_level"):
                 raise ValueError("A 'patience_level' must be provided.")
-            return self._run_discovery_session(run_type, progress_handler=progress_handler, cancel_event=cancel_event, **kwargs)
+
+            challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"))
+
+            models_to_run = self._determine_models_to_run(run_type, **kwargs)
+            engine_config = self._configure_engine(run_type, **kwargs)
+
+            challenge = self._setup_challenge(challenge_schema, engine_config, **kwargs)
+            algorithms = self._setup_algorithms(models_to_run, **kwargs)
+
+            results = self._run_engine(challenge, algorithms, engine_config, progress_handler, cancel_event, **kwargs)
+
+            self._display_results(results)
+            return results
 
         elif run_type == "interactive":
             if not kwargs.get("dataset_path"):
@@ -72,21 +84,6 @@ class ScientificModelRunner:
         if not challenge_data:
             raise ValueError(f"Challenge with ID '{challenge_id}' not found")
         return challenge_data
-
-    def _run_discovery_session(self, run_type: str, progress_handler: Optional[ProgressHandler], cancel_event: Optional[threading.Event], **kwargs):
-        """Helper to configure and run the scientific discovery engine."""
-        challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"))
-
-        models_to_run = self._determine_models_to_run(run_type, **kwargs)
-        engine_config = self._configure_engine(run_type, **kwargs)
-
-        challenge = self._setup_challenge(challenge_schema, engine_config, **kwargs)
-        algorithms = self._setup_algorithms(models_to_run, **kwargs)
-
-        results = self._run_engine(challenge, algorithms, engine_config, progress_handler, cancel_event, **kwargs)
-
-        self._display_results(results)
-        return results
 
     def _determine_models_to_run(self, run_type: str, **kwargs) -> List[str]:
         if run_type == "optimization":

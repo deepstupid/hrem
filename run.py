@@ -39,31 +39,6 @@ def cli(ctx):
     """HRM System: A unified interface for scientific comparisons."""
     ctx.obj = AppContext()
 
-@cli.command()
-def gui():
-    """Launch the (now deprecated) PyQt6 Graphical User Interface."""
-    try:
-        from gui.main import main as gui_main
-        gui_main()
-    except ImportError as e:
-        console.print(f"[red]GUI Error: {e}[/red]")
-        console.print("[yellow]Make sure PyQt6 is installed: pip install PyQt6[/yellow]")
-    except Exception:
-        console.print("[bold red]The PyQt6 GUI is currently non-functional due to system-level dependency issues.[/bold red]")
-        console.print("[yellow]Please use the new TUI interface instead: `python run.py tui`[/yellow]")
-
-@cli.command()
-def tui():
-    """Launch the new Textual User Interface."""
-    try:
-        from tui.main import main as tui_main
-        tui_main()
-    except ImportError as e:
-        console.print(f"[red]TUI Error: {e}[/red]")
-        console.print("[yellow]Please ensure the TUI components are correctly installed and structured.[/yellow]")
-    except Exception as e:
-        console.print(f"[bold red]An unexpected error occurred while launching the TUI: {e}[/bold red]")
-
 try:
     from cui.main import cui as cui_group
     cli.add_command(cui_group, 'cui')

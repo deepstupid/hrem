@@ -28,3 +28,4 @@ include = ["sc_engine*", "models*", "dataset*"]
 pythonpath = [
   "."
 ]
+asyncio_mode = "auto"

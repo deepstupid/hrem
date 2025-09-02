@@ -21,6 +21,7 @@ from sc_engine.utils.plotting import generate_performance_plot
 from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig
 from dataset.common import PuzzleDatasetMetadata
 from models.hrm.hrem import HREM
+from tui.control import ExperimentControl
 
 
 console = Console()
@@ -38,7 +39,7 @@ class DiscoveryResults:
 class ScientificDiscoveryEngine:
     """Central orchestrator for scientific exploration process."""
     
-    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], default_training_config: Dict[str, Any], config: Dict[str, Any] = None, progress_handler: Optional[ProgressHandler] = None):
+    def __init__(self, challenge: ChallengeConfig, algorithms: List[AlgorithmConfig], default_training_config: Dict[str, Any], config: Dict[str, Any] = None, progress_handler: Optional[ProgressHandler] = None, control: Optional[ExperimentControl] = None):
         self.challenge = challenge
         self.algorithms = algorithms
         self.config = config or {}
@@ -50,6 +51,7 @@ class ScientificDiscoveryEngine:
         self.results: Dict[str, Any] = {}
         self.optimizer: HyperparameterOptimizer = OptunaOptimizer()
         self.progress_handler = progress_handler
+        self.control = control or ExperimentControl()
 
     def execute_discovery_session(self, patience_budget: PatienceBudget) -> DiscoveryResults:
         """Execute a scientifically-driven comparison within patience constraints."""
@@ -138,7 +140,14 @@ class ScientificDiscoveryEngine:
                 "smoke_test": smoke_test
             }
             model_config = model_config_fn(alg)
-            trainer = Trainer(self.default_training_config, model_config, self.challenge.dataset, run_config, progress_handler=self.progress_handler)
+            trainer = Trainer(
+                self.default_training_config,
+                model_config,
+                self.challenge.dataset,
+                run_config,
+                progress_handler=self.progress_handler,
+                control=self.control
+            )
             trainer.initialize()
             trainers.append(trainer)
         return trainers
@@ -170,6 +179,9 @@ class ScientificDiscoveryEngine:
         results = {}
         histories = {}
         for i, trainer in enumerate(trainers):
+            if self.control.is_cancelled():
+                self._send_progress('evaluation_cancelled', {'reason': 'Cancelled by user.'})
+                break
             alg = self.algorithms[i]
             self._send_progress('start_algorithm', {'algorithm': alg.name, 'progress': (i + 1) / len(self.algorithms)})
             metrics, history = trainer.run_sequential_training()
@@ -182,6 +194,9 @@ class ScientificDiscoveryEngine:
         self._send_progress('start_phase', {'phase': 'optimization'})
         optimization_results = {}
         for alg in self.algorithms:
+            if self.control.is_cancelled():
+                self._send_progress('optimization_cancelled', {'reason': 'Cancelled by user.'})
+                break
             if not alg.search_space:
                 self._send_progress('skip_optimization', {'algorithm': alg.name, 'reason': 'No search space defined.'})
                 optimization_results[alg.name] = baseline_results.get(alg.name, {})

@@ -9,6 +9,7 @@ from .challenge_registry import ChallengeRegistry
 from .schemas import ChallengeSchema
 from .progress_handler import ProgressHandler
 from dataset_manager import dataset_manager
+from tui.control import ExperimentControl
 
 console = Console()
 
@@ -26,7 +27,7 @@ class ScientificModelRunner:
         with open("config/training/default.yaml", 'r') as f:
             self.default_training_config = yaml.safe_load(f)
 
-    def run(self, run_type: str, progress_handler: Optional[ProgressHandler] = None, **kwargs):
+    def run(self, run_type: str, progress_handler: Optional[ProgressHandler] = None, control: Optional[ExperimentControl] = None, **kwargs):
         """
         Run a discovery session based on the specified run type.
         This is the main entry point for kicking off an experiment.
@@ -43,7 +44,7 @@ class ScientificModelRunner:
         if not patience_level:
             raise ValueError("A 'patience_level' must be provided.")
 
-        return self._run_discovery_session(run_type, progress_handler=progress_handler, **kwargs)
+        return self._run_discovery_session(run_type, progress_handler=progress_handler, control=control, **kwargs)
 
     def _get_challenge_data(self, challenge_id: str) -> ChallengeSchema:
         """Fetches and validates challenge data from the registry."""
@@ -52,7 +53,7 @@ class ScientificModelRunner:
             raise ValueError(f"Challenge with ID '{challenge_id}' not found")
         return challenge_data
 
-    def _run_discovery_session(self, run_type: str, progress_handler: Optional[ProgressHandler], **kwargs):
+    def _run_discovery_session(self, run_type: str, progress_handler: Optional[ProgressHandler], control: Optional[ExperimentControl], **kwargs):
         """Helper to configure and run the scientific discovery engine."""
         challenge_schema = self._get_challenge_data(kwargs.get("challenge_id"))
 
@@ -87,7 +88,8 @@ class ScientificModelRunner:
             algorithms=algorithms,
             default_training_config=self.default_training_config,
             config=engine_config,
-            progress_handler=progress_handler
+            progress_handler=progress_handler,
+            control=control
         )
 
         results = engine.execute_discovery_session(patience_budget)

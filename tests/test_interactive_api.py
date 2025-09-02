@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 import yaml
 
-from sc_engine.core.model_runner import ScientificModelRunner
+from sc_engine.core.runner import ScientificModelRunner
 from dataset_manager import dataset_manager
 
 class TestInteractiveAPI(unittest.TestCase):

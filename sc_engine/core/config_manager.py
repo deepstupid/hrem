@@ -33,7 +33,7 @@ class ConfigManager:
             raise ValueError("Challenge config is empty or could not be loaded.")
 
         try:
-            return ChallengeConfigSchema.parse_obj(raw_data)
+            return ChallengeConfigSchema.model_validate(raw_data)
         except ValidationError as e:
             console.print(f"[bold red]Error validating challenge config '{path}':[/bold red]")
             console.print(e)
@@ -52,7 +52,7 @@ class ConfigManager:
                 config_data = self._load_yaml(path)
                 if config_data and 'name' in config_data:
                     try:
-                        validated_config = ModelConfigSchema.parse_obj(config_data)
+                        validated_config = ModelConfigSchema.model_validate(config_data)
                         model_configs[validated_config.name] = validated_config
                     except ValidationError as e:
                         console.print(f"[bold red]Error validating model config '{filename}':[/bold red]")

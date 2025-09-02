@@ -5,7 +5,7 @@ import os
 import importlib
 
 # Correctly import the ScientificModelRunner
-from sc_engine.core.model_runner import ScientificModelRunner
+from sc_engine.core.runner import ScientificModelRunner
 from sc_engine.core.config_manager import ConfigManager
 from sc_engine.core.challenge_registry import ChallengeRegistry
 

@@ -7,10 +7,9 @@ from rich.rule import Rule
 from sc_engine.core.engine import ScientificDiscoveryEngine
 from sc_engine.core.config_manager import ConfigManager
 from sc_engine.core.challenge_registry import ChallengeRegistry
-from sc_engine.core.ui_utils import get_available_challenges, get_available_models
 from dataset_manager import dataset_manager
 from cui.progress import CUIProgressHandler
-from cui.utils import prompt_for_challenge, prompt_for_models
+from cui.utils import prompt_for_challenge, prompt_for_models, get_available_challenges, get_available_models
 from sc_engine.core.components import OptunaOptimizer, ScientificTimingManager
 
 @click.group()

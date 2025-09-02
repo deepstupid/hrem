@@ -2,12 +2,11 @@ from rich.table import Table
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.rule import Rule
-from typing import List
+from typing import List, Dict
 
 from sc_engine.core.config_manager import ConfigManager
 from sc_engine.core.challenge_registry import ChallengeRegistry
-from sc_engine.core.ui_utils import get_available_challenges, get_available_models
-from sc_engine.core.schemas import ChallengeSchema
+from sc_engine.core.schemas import ChallengeSchema, ModelConfigSchema
 
 def prompt_for_challenge(console: Console, challenge_registry: ChallengeRegistry) -> ChallengeSchema:
     """Interactively prompts the user to select a challenge."""

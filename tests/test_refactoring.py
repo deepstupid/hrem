@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import torch
 import sc_engine
 from sc_engine.plugins.algorithms.hrem import HREMAlgorithm
-from sc_engine.core.insight_generator import ScientificInsightGenerator
+from sc_engine.core.components import ScientificInsightGenerator
 import itertools
 import yaml
 
@@ -112,6 +112,9 @@ class RefactoringTests(unittest.TestCase):
         self.assertGreater(p_values["ModelA"]["ModelC"], 0.05)
 
 
+from sc_engine.core.trainer import Trainer
+
+
 class TrainerTests(unittest.TestCase):
     def test_trainer_initialization(self):
         """Test that the Trainer class initializes correctly."""
@@ -120,13 +123,14 @@ class TrainerTests(unittest.TestCase):
         data_config = {"dataset": "synthetic-duplicate"}
         run_config = {"study_name": "test_trainer", "output_dir": "experiments"}
 
-        trainer = sc_engine.core.trainer.Trainer(training_config, model_config, data_config, run_config)
+        trainer = Trainer(training_config, model_config, data_config, run_config)
         self.assertIsNotNone(trainer)
 
 class HyperparameterOptimizerTests(unittest.TestCase):
     def test_optimizer_runs(self):
         """Test that the optimizer runs the objective function the correct number of times."""
-        optimizer = sc_engine.core.optimization.OptunaOptimizer()
+        from sc_engine.core.components import OptunaOptimizer
+        optimizer = OptunaOptimizer()
         objective = MagicMock(return_value=1.0)
         search_space = {
             "x": {"type": "float", "low": -10, "high": 10},

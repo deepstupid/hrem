@@ -24,7 +24,7 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
         )
         self.patience_budget = PatienceBudget(level="medium")
 
-    @patch('sc_engine.core.engine.Trainer')
+    @patch('sc_engine.core.process.optimization.Trainer')
     def test_run_hyperparameter_optimization(self, MockTrainer):
         # Arrange
         mock_trainer_instance = MockTrainer.return_value
@@ -50,7 +50,7 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
         self.assertIn('objective', engine.optimizer.optimize.call_args[1])
         self.assertEqual(engine.optimizer.optimize.call_args[1]['search_space'], self.algorithm_config.search_space)
 
-    @patch('sc_engine.core.engine.Trainer')
+    @patch('sc_engine.core.process.evaluation.Trainer')
     def test_run_evaluation(self, MockTrainer):
         # Arrange
         mock_trainer_instance = MockTrainer.return_value
@@ -67,7 +67,7 @@ class TestScientificDiscoveryEngine(unittest.TestCase):
         engine.timing_manager = MagicMock()
 
         # Act
-        results = engine.run_evaluation(
+        results = engine.evaluation.run_evaluation(
             title="Test Evaluation",
             phase=MagicMock(),
             patience_allocation=0.5,

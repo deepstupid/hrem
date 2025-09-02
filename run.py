@@ -90,9 +90,14 @@ def gui():
 @cli.command()
 def tui():
     """Launch the new Textual User Interface."""
-    from tui.main import DiscoveryTUI
-    app = DiscoveryTUI()
-    app.run()
+    try:
+        from tui.main import main as tui_main
+        tui_main()
+    except ImportError as e:
+        console.print(f"[red]TUI Error: {e}[/red]")
+        console.print("[yellow]Please ensure the TUI components are correctly installed and structured.[/yellow]")
+    except Exception as e:
+        console.print(f"[bold red]An unexpected error occurred while launching the TUI: {e}[/bold red]")
 
 
 if __name__ == "__main__":
